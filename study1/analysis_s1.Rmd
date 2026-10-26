@@ -1,16 +1,8 @@
 ---
 title: "Feeling Loved and Purchase Intention for Ecological Products: Replication of Tang et al. (2025, Study 1a) — Study 1 Analysis"
 date: "`r format(Sys.Date(), '%d %B %Y')`"
-output:
-  html_document:
-    toc: true
-    toc_float: true
-    toc_depth: 3
-    number_sections: true
-    code_folding: show
-    df_print: kable
 params:
-  data_url: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/data_s1_anonymized.RDS"
+  data_url: "https://github.com/janurban/metarials-love-study/blob/main/study1/data_s1_anonymized.RDS?raw=true"
   n_boot: 5000            # bootstrap draws for the mediation model (set lower, e.g. 500, while drafting)
   seed: 1234
   run_text_sensitivity: false   # set to true once the manipulation texts have been coded (see Section 7.2)
@@ -28,8 +20,7 @@ This document reproduces all analyses of Study 1, a preregistered replication of
 
 **Original study.** Tang, D., Chen, J., Jiang, Q., Huang, H., & Zheng, M. (2025). How feeling loved inspires the purchase of green foods. *Journal of Environmental Psychology, 102*, 102523. https://doi.org/10.1016/j.jenvp.2025.102523. Original effect: *d* = 0.53, 95% CI [0.19, 0.87], *N* = 141.
 
-**Materials and preregistration:** https://osf.io/68z7f/overview  
-**Study information for participants:** https://osf.io/v8s7u/wiki?wiki=296v8
+**Materials and preregistration:** https://osf.io/vfy5g/overview?view_only=5e910d70bd6b4f669ff74c3a16c4d0bf
 
 ## Preregistered hypotheses
 
