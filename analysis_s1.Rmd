@@ -1,0 +1,562 @@
+---
+title: "Feeling Loved and Purchase Intention for Ecological Products: Replication of Tang et al. (2025, Study 1a) — Study 1 Analysis"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: show
+    df_print: kable
+params:
+  data_url: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/data_s1_anonymized.RDS"
+  n_boot: 5000            # bootstrap draws for the mediation model (set lower, e.g. 500, while drafting)
+  seed: 1234
+  run_text_sensitivity: false   # set to true once the manipulation texts have been coded (see Section 7.2)
+  text_coding_file: "text_coding_s1.csv"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", comment = "#>")
+```
+
+# Overview
+
+This document reproduces all analyses of Study 1, a preregistered replication of Tang et al. (2025, Study 1a), and links each analysis to the preregistration (Replication Recipe) and to the draft of the paper. All numbers reported in the text below are computed in-line from the data, so the document can be re-knitted whenever the data or the analysis change.
+
+**Original study.** Tang, D., Chen, J., Jiang, Q., Huang, H., & Zheng, M. (2025). How feeling loved inspires the purchase of green foods. *Journal of Environmental Psychology, 102*, 102523. https://doi.org/10.1016/j.jenvp.2025.102523. Original effect: *d* = 0.53, 95% CI [0.19, 0.87], *N* = 141.
+
+**Materials and preregistration:** https://osf.io/68z7f/overview  
+**Study information for participants:** https://osf.io/v8s7u/wiki?wiki=296v8
+
+## Preregistered hypotheses
+
+| Label | Hypothesis | Status |
+|---|---|---|
+| H1 | Participants in the feeling-loved condition (vs. control) will have a higher intention to purchase ecological (organic) food. | Confirmatory |
+| H2 | Participants in the feeling-loved condition (vs. control) will feel more loved (manipulation check). | Confirmatory |
+| H3 | The effect of the manipulation on intention is positively mediated by self-esteem (labelled "self-perception" in the draft and in the data). | Confirmatory extension |
+
+**Criterion for a successful replication (preregistered):** statistically significant (two-tailed, α = .05) differences in both intention (H1) and the feeling of being loved (H2), both in the predicted direction. **Criterion for H3:** self-esteem positively mediates the effect of the manipulation on intention.
+
+## Notes on correspondence between the preregistration, the script, and the draft
+
+The following points should be resolved (or reported as deviations) before submission:
+
+1. **Primary intention measure.** The preregistration states that the *three-item* scale from Tang et al. (2025) is used for all tests and the remaining items are used in a sensitivity analysis. The analysis script and the draft use the *six-item* scale as the primary measure and the three-item scale as exploratory. This document follows the script (six-item scale as primary) but reports the three-item results right next to it in Section 5.2, so either can be designated as primary. If the six-item scale stays primary, this should be reported as a deviation from the preregistration (justified by the reliability of the three-item scale; see Section 4).
+2. **Hypothesis labels.** The preregistration labels the mediation hypothesis H4 in the hypothesis section and H3 in the analysis plan. This document uses H3.
+3. **Sensitivity analysis excluding off-topic texts.** Preregistered, but not yet implemented in the script; the written texts are removed from the anonymized data. Section 7.2 contains the code, which runs once a file with the coding of the texts is available.
+4. **Sign convention.** The original script used `t.test()` and `cohen.d()` with the formula interface, which computes *control − experimental* (hence the negative *t* and *d* for the manipulation check in the draft). Here all differences are computed as **experimental − control**, so positive values indicate an effect in the predicted direction. Absolute values are identical to the draft.
+5. **Minimum text length.** The informed consent states a minimum of 130 characters, whereas the confirmation page and the writing task require 300 characters. The Methods section should report 300 characters (the enforced minimum) and may note the discrepancy.
+
+# Setup
+
+```{r packages}
+if (!require("pacman")) install.packages("pacman")
+# mediation (via MASS) and car mask some dplyr functions, so dplyr is loaded last
+# and dplyr::select / car::recode are called with explicit namespaces.
+pacman::p_load(car, psych, GPArotation, mediation, pwr, effsize, knitr, tidyr, dplyr)
+```
+
+```{r helpers}
+# Formatting helpers for in-text reporting
+fmt   <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+fmt0  <- function(x, digits = 2) sub("^(-?)0\\.", "\\1.", fmt(x, digits))   # no leading zero (APA)
+fmt_p <- function(p) ifelse(p < .001, "< .001", paste("=", fmt0(p, 3)))
+pct   <- function(x, digits = 0) paste0(fmt(100 * x, digits), "%")
+
+# Welch two-sample t-test and Cohen's d, computed as experimental (1) minus control (0)
+compare_groups <- function(var, data, conf.level = .95) {
+  x1 <- data[[var]][data$treatment == 1]
+  x0 <- data[[var]][data$treatment == 0]
+  tt <- t.test(x1, x0)                       # two-tailed Welch test
+  dd <- effsize::cohen.d(x1, x0, conf.level = conf.level)
+  list(
+    t = tt, d = dd,
+    n1 = length(x1), m1 = mean(x1), sd1 = sd(x1),
+    n0 = length(x0), m0 = mean(x0), sd0 = sd(x0),
+    text = sprintf("*t*(%s) = %s, *p* %s, *d* = %s, 95%% CI [%s, %s]",
+                   fmt(tt$parameter), fmt(tt$statistic), fmt_p(tt$p.value),
+                   fmt(dd$estimate), fmt(dd$conf.int[1]), fmt(dd$conf.int[2]))
+  )
+}
+
+# Reliability: Cronbach's alpha, McDonald's omega hierarchical and omega total
+reliability <- function(items) {
+  om <- tryCatch(suppressWarnings(psych::omega(items, plot = FALSE)),
+                 error = function(e) NULL)
+  if (is.null(om)) {
+    return(c(alpha = psych::alpha(items)$total$raw_alpha, omega_h = NA, omega_t = NA))
+  }
+  c(alpha = unname(om$alpha), omega_h = unname(om$omega_h), omega_t = unname(om$omega.tot))
+}
+```
+
+# Data
+
+## Anonymization (not run)
+
+The raw data exported from LimeSurvey were anonymized with the code below before publication. The code is shown for transparency and is not evaluated, because the raw data are not public. The written texts (manipulation task) were deleted from the public data set because they may contain identifying information.
+
+```{r anonymization, eval = FALSE}
+data <- readxl::read_excel("results-survey997596.xlsx")
+
+# renaming the two id variables in the dataset
+data <- data %>%
+  rename_with(~ c("syst.id", "subject"), c("id...1", "id...10"))
+
+# anonymizing / deleting potentially identifying information
+data$subject   <- as.numeric(as.factor(data$subject)) # anonymized participant identifier
+data$ipaddr    <- NULL                                # IP address
+data$refurl    <- NULL                                # redirecting URL
+data$treatment <- NULL                                # written text, experimental condition
+data$control   <- NULL                                # written text, control condition
+
+saveRDS(data, "data_s1_anonymized.RDS")
+writexl::write_xlsx(data, "data_s1_anonymized.xlsx")
+```
+
+## Loading the anonymized data
+
+```{r load-data}
+read_rds_from_url <- function(url) {
+  tmp <- tempfile(fileext = ".rds")
+  download.file(url, destfile = tmp, mode = "wb", quiet = TRUE)
+  readRDS(tmp)
+}
+
+data <- read_rds_from_url(params$data_url)
+
+# LimeSurvey stores answer codes as "A1", "A2", ...; convert them to numbers
+data <- data %>%
+  mutate(across(c(gender:educ, random, manipCheck, `intention[SQ001]`:repeated),
+                ~ as.numeric(gsub("A", "", .x))))
+```
+
+## Participant flow
+
+Participants who were screened out before randomization (variable `random` missing) are excluded from the flow. Participants who were randomized but did not reach the last page (page 17) are classified as drop-outs. As preregistered, the main analyses include all participants who completed the study.
+
+```{r flow}
+data$status <- "screenout"
+data$status <- ifelse(!is.na(data$random), "dropout", data$status)
+data$status <- ifelse(data$lastpage == 17, "complete", data$status)
+
+data <- data %>% filter(status != "screenout")
+
+flow <- data %>%
+  count(status) %>%
+  mutate(prop = n / sum(n))
+flow
+
+n_entered  <- nrow(data)
+n_complete <- sum(data$status == "complete")
+n_dropout  <- sum(data$status == "dropout")
+```
+
+In total, `r n_entered` participants entered the study and `r n_complete` (`r pct(n_complete / n_entered)`) completed it; `r n_dropout` participants dropped out after randomization.
+
+### Attrition by condition and by page (exploratory)
+
+The draft notes that most drop-outs happened in the writing task. Because condition was assigned before the writing task, differential attrition across conditions could bias the comparison of completers, so we report drop-out by condition and the last page reached by drop-outs. This analysis was not preregistered.
+
+```{r attrition}
+data <- data %>%
+  mutate(condition = factor(random, levels = c(1, 2), labels = c("control", "experimental")))
+
+attrition_tab <- table(Condition = data$condition, Status = data$status)
+attrition_tab
+round(prop.table(attrition_tab, margin = 1), 3)
+attrition_test <- chisq.test(attrition_tab)
+attrition_test
+
+# Last page reached by participants who dropped out
+data %>%
+  filter(status == "dropout") %>%
+  count(condition, lastpage) %>%
+  pivot_wider(names_from = condition, values_from = n, values_fill = 0)
+```
+
+Drop-out rates were `r pct(prop.table(attrition_tab, 1)["control", "dropout"])` in the control condition and `r pct(prop.table(attrition_tab, 1)["experimental", "dropout"])` in the experimental condition, χ²(`r attrition_test$parameter`) = `r fmt(attrition_test$statistic)`, *p* `r fmt_p(attrition_test$p.value)`.
+
+## Completion times (appendix; not reported in the paper)
+
+```{r times}
+time_vars <- c("interviewtime", "consentTime", "confirmTextTime", "productInfoTime",
+               "treatmentTime", "controlTime", "manipCheckTime", "intentionTime",
+               "selfperceptionTime", "repeatedTime", "debriefingTime")
+
+time_table <- data %>%
+  filter(lastpage == 17) %>%
+  summarise(across(all_of(time_vars),
+                   list(M      = ~ mean(.x, na.rm = TRUE),
+                        SD     = ~ sd(.x, na.rm = TRUE),
+                        Min    = ~ fivenum(.x, na.rm = TRUE)[1],
+                        Q1     = ~ fivenum(.x, na.rm = TRUE)[2],
+                        Median = ~ fivenum(.x, na.rm = TRUE)[3],
+                        Q3     = ~ fivenum(.x, na.rm = TRUE)[4],
+                        Max    = ~ fivenum(.x, na.rm = TRUE)[5]),
+                   .names = "{.col}___{.fn}")) %>%
+  pivot_longer(everything(), names_to = c("Variable", ".value"),
+               names_pattern = "(.*)___(.*)")
+
+kable(time_table, digits = 2,
+      caption = "Completion times in seconds (completers only). interviewtime = total completion time.")
+```
+
+## Analysis sample and sociodemographics
+
+```{r sample}
+data.complete <- data %>% filter(lastpage == 17)
+
+# Age was recorded in a drop-down menu starting at 15 (code 1 = 15 years)
+data.complete$ageNum2 <- data.complete$ageNum + 14
+
+data.complete$gender <- car::recode(data.complete$gender,
+                                    "1 = 'male'; 2 = 'female'; 3 = 'non-binary/gender-diverse'")
+data.complete$educ   <- car::recode(data.complete$educ,
+                                    "1 = 'elementary/secondary without diploma'; 3 = 'secondary with diploma'; 4 = 'university'")
+
+gender_tab <- prop.table(table(data.complete$gender))
+educ_tab   <- prop.table(table(data.complete$educ))
+
+data.frame(Gender = names(gender_tab), Proportion = round(as.numeric(gender_tab), 3))
+data.frame(Education = names(educ_tab), Proportion = round(as.numeric(educ_tab), 3))
+```
+
+The analysis sample comprised `r nrow(data.complete)` participants (age *M* = `r fmt(mean(data.complete$ageNum2))`, *SD* = `r fmt(sd(data.complete$ageNum2))`; `r pct(gender_tab["female"])` women). In terms of education, `r pct(educ_tab["elementary/secondary without diploma"])` had elementary education or secondary education without a high school diploma, `r pct(educ_tab["secondary with diploma"])` had a high school diploma, and `r pct(educ_tab["university"])` had university education.
+
+### Repeated participation
+
+Participants were asked whether they had participated in the study before (1 = yes, 2 = no). No exclusion based on this item was preregistered; the answers are reported for information only.
+
+```{r repeated}
+table(Repeated = data.complete$repeated, useNA = "ifany")
+```
+
+# Measures
+
+```{r rename-items}
+data.complete <- data.complete %>%
+  rename_with(~ paste0("intention_", 1:6), `intention[SQ001]`:`intention[SQ006]`) %>%
+  rename_with(~ paste0("selfperc_", 1:10), `selfperception[SQ001]`:`selfperception[SQ010]`)
+
+# Treatment indicator: 1 = feeling-loved (experimental) condition, 0 = control condition
+data.complete$treatment <- data.complete$random - 1
+```
+
+## Purchase intention
+
+Items 1–3 were adapted from Tang et al. (2025), items 4–6 from Kumar et al. (2023). Item 3 is reverse-coded. Scale scores are item means (1–7).
+
+```{r intention}
+intention <- data.complete %>% dplyr::select(intention_1:intention_6)
+intention[, 3] <- 8 - intention[, 3]                       # reverse-code item 3
+
+data.complete$intention  <- rowMeans(intention)            # six-item scale
+data.complete$intention3 <- rowMeans(intention[, 1:3])     # three-item scale (Tang et al., 2025)
+
+rel_int6 <- reliability(intention)
+rel_int3 <- reliability(intention[, 1:3])
+```
+
+## Self-perception (self-esteem; mediator)
+
+Rosenberg's self-esteem scale (Czech adaptation by Blatný & Osecká, 1994), answered on a seven-point scale as in Tang et al. (2025). Items 2, 5, 6, 8, and 9 are reverse-coded.
+
+```{r selfperc}
+selfperc <- data.complete %>% dplyr::select(selfperc_1:selfperc_10)
+rev_items <- c(2, 5, 6, 8, 9)
+selfperc[, rev_items] <- 8 - selfperc[, rev_items]
+
+data.complete$selfperc <- rowMeans(selfperc)
+
+rel_self <- reliability(selfperc)
+```
+
+## Reliability
+
+```{r reliability-table}
+rel_table <- rbind(
+  "Intention (6 items)"       = rel_int6,
+  "Intention (3 items, Tang et al.)" = rel_int3,
+  "Self-perception (10 items)" = rel_self
+)
+kable(rel_table, digits = 2,
+      col.names = c("Cronbach's alpha", "Omega hierarchical", "Omega total"))
+```
+
+The six-item intention scale had good internal consistency, α = `r fmt0(rel_int6["alpha"])`, ω~h~ = `r fmt0(rel_int6["omega_h"])`, ω~t~ = `r fmt0(rel_int6["omega_t"])`. Using only the three original items from Tang et al. (2025) would reduce reliability, α = `r fmt0(rel_int3["alpha"])`, ω~t~ = `r fmt0(rel_int3["omega_t"])`. The self-perception scale had α = `r fmt0(rel_self["alpha"])`, ω~h~ = `r fmt0(rel_self["omega_h"])`, ω~t~ = `r fmt0(rel_self["omega_t"])`.
+
+Note: omega hierarchical is not well defined for a three-item scale (psych::omega extracts three group factors by default), so only alpha and omega total are interpreted for the three-item version.
+
+# Descriptive statistics
+
+```{r descriptives-by-group}
+desc_vars   <- c(manipCheck = "Manipulation check", intention = "Intention (6 items)",
+                 intention3 = "Intention (3 items)", selfperc = "Self-perception")
+
+n_ctrl <- sum(data.complete$treatment == 0)
+n_exp  <- sum(data.complete$treatment == 1)
+
+table_a2 <- data.complete %>%
+  dplyr::select(treatment, all_of(names(desc_vars))) %>%
+  pivot_longer(-treatment, names_to = "var") %>%
+  group_by(var, treatment) %>%
+  summarise(cell = sprintf("%.2f (%.2f)", mean(value), sd(value)), .groups = "drop") %>%
+  pivot_wider(names_from = treatment, values_from = cell) %>%
+  mutate(Variable = desc_vars[var]) %>%
+  arrange(match(var, names(desc_vars))) %>%
+  dplyr::select(Variable, `0`, `1`)
+
+kable(table_a2,
+      col.names = c("Variable",
+                    sprintf("Control group (n = %d)", n_ctrl),
+                    sprintf("Experimental group (n = %d)", n_exp)),
+      caption = "Table A2. Descriptive statistics, M (SD), for the control and experimental groups")
+```
+
+# Confirmatory analyses
+
+All tests are two-tailed Welch *t*-tests for independent samples, as preregistered. Cohen's *d* uses the pooled *SD*; positive values indicate higher scores in the feeling-loved condition.
+
+## H2: Manipulation check
+
+```{r h2}
+h2 <- compare_groups("manipCheck", data.complete)
+h2$t
+h2$d
+```
+
+Participants in the feeling-loved condition reported feeling more loved (*M* = `r fmt(h2$m1)`, *SD* = `r fmt(h2$sd1)`) than participants in the control condition (*M* = `r fmt(h2$m0)`, *SD* = `r fmt(h2$sd0)`), `r h2$text`. **H2 was `r ifelse(h2$t$p.value < .05 & h2$t$statistic > 0, "supported", "not supported")`.**
+
+## H1: Effect of the manipulation on purchase intention
+
+```{r h1}
+h1 <- compare_groups("intention", data.complete)     # six-item scale (primary in script/draft)
+h1$t
+h1$d
+
+h1_3 <- compare_groups("intention3", data.complete)  # three-item scale (primary in preregistration)
+h1_3$t
+h1_3$d
+```
+
+Purchase intention (six-item scale) did not differ substantially between the feeling-loved condition (*M* = `r fmt(h1$m1)`, *SD* = `r fmt(h1$sd1)`) and the control condition (*M* = `r fmt(h1$m0)`, *SD* = `r fmt(h1$sd0)`), `r h1$text`. The result was the same for the original three-item scale (*M*~exp~ = `r fmt(h1_3$m1)`, *M*~ctrl~ = `r fmt(h1_3$m0)`), `r h1_3$text`. **H1 was `r ifelse(h1$t$p.value < .05 & h1$t$statistic > 0, "supported", "not supported")` (six-item scale) and `r ifelse(h1_3$t$p.value < .05 & h1_3$t$statistic > 0, "supported", "not supported")` (three-item scale).**
+
+## Replication verdict
+
+```{r verdict}
+h1_ok   <- h1$t$p.value   < .05 & h1$t$statistic   > 0
+h1_3_ok <- h1_3$t$p.value < .05 & h1_3$t$statistic > 0
+h2_ok   <- h2$t$p.value   < .05 & h2$t$statistic   > 0
+
+data.frame(
+  Criterion = c("H1 (6-item intention)", "H1 (3-item intention)", "H2 (manipulation check)"),
+  d   = round(c(h1$d$estimate, h1_3$d$estimate, h2$d$estimate), 2),
+  p   = signif(c(h1$t$p.value, h1_3$t$p.value, h2$t$p.value), 3),
+  Met = c(h1_ok, h1_3_ok, h2_ok)
+)
+```
+
+Following the preregistered criterion (significant effects in the predicted direction for both H1 and H2), the replication was **`r ifelse(h1_ok & h2_ok, "successful", "not successful")`** with the six-item scale and **`r ifelse(h1_3_ok & h2_ok, "successful", "not successful")`** with the three-item scale. The replication effect on intention (*d* = `r fmt(h1$d$estimate)`) was considerably smaller than the original effect (*d* = 0.53, 95% CI [0.19, 0.87]).
+
+# Extension: Mediation by self-perception (H3)
+
+## Effect of the manipulation on self-perception
+
+```{r a-path}
+h3a <- compare_groups("selfperc", data.complete)
+h3a$t
+h3a$d
+
+r_sm <- cor.test(data.complete$selfperc, data.complete$intention)
+r_sm
+```
+
+Self-perception did not differ substantially between the feeling-loved condition (*M* = `r fmt(h3a$m1)`, *SD* = `r fmt(h3a$sd1)`) and the control condition (*M* = `r fmt(h3a$m0)`, *SD* = `r fmt(h3a$sd0)`), `r h3a$text`. Self-perception and intention were correlated at *r* = `r fmt0(r_sm$estimate)`, *p* `r fmt_p(r_sm$p.value)`.
+
+## Mediation model
+
+The mediation model regresses self-perception on treatment (mediator model) and intention on treatment and self-perception (outcome model). The indirect effect (ACME) is tested with a nonparametric percentile bootstrap (`r params$n_boot` resamples) using the *mediation* package.
+
+```{r mediation, cache = TRUE}
+set.seed(params$seed)
+model_m <- lm(selfperc ~ treatment, data = data.complete)
+model_y <- lm(intention ~ treatment + selfperc, data = data.complete)
+
+med <- mediation::mediate(model_m, model_y,
+                          treat = "treatment", mediator = "selfperc",
+                          boot = TRUE, boot.ci.type = "perc",
+                          sims = params$n_boot)
+summary(model_m)
+summary(model_y)
+summary(med)
+```
+
+```{r mediation-table}
+med_table <- data.frame(
+  Effect   = c("Indirect effect (ACME)", "Direct effect (ADE)", "Total effect", "Proportion mediated"),
+  Estimate = c(med$d.avg, med$z.avg, med$tau.coef, med$n.avg),
+  Lower    = c(med$d.avg.ci[1], med$z.avg.ci[1], med$tau.ci[1], med$n.avg.ci[1]),
+  Upper    = c(med$d.avg.ci[2], med$z.avg.ci[2], med$tau.ci[2], med$n.avg.ci[2]),
+  p        = c(med$d.avg.p, med$z.avg.p, med$tau.p, med$n.avg.p)
+)
+kable(med_table, digits = 3, row.names = FALSE,
+      col.names = c("Effect", "Estimate", "95% CI lower", "95% CI upper", "p"),
+      caption = sprintf("Mediation by self-perception (N = %d, %d bootstrap resamples)",
+                        med$nobs, params$n_boot))
+
+h3_ok <- med$d.avg > 0 & med$d.avg.ci[1] > 0
+coef_y <- summary(model_y)$coefficients
+```
+
+The indirect effect of the manipulation on intention through self-perception was *b* = `r fmt(med$d.avg, 3)`, 95% CI [`r fmt(med$d.avg.ci[1], 3)`, `r fmt(med$d.avg.ci[2], 3)`]. Self-perception was `r ifelse(coef_y["selfperc", 4] < .05, "", "only weakly and not significantly ")`associated with intention when controlling for treatment, *b* = `r fmt(coef_y["selfperc", 1], 3)`, *SE* = `r fmt(coef_y["selfperc", 2], 3)`, *p* `r fmt_p(coef_y["selfperc", 4])`. **H3 was `r ifelse(h3_ok, "supported", "not supported")`.** Note that the proportion mediated is not interpretable when the total effect is close to zero.
+
+# Sensitivity analyses
+
+## Alternative intention scale
+
+The results for the three-item scale are reported alongside the six-item scale in Section 5.2. For completeness, the mediation model is re-estimated with the three-item scale.
+
+```{r mediation-3items, cache = TRUE}
+set.seed(params$seed)
+model_y3 <- lm(intention3 ~ treatment + selfperc, data = data.complete)
+med3 <- mediation::mediate(model_m, model_y3,
+                           treat = "treatment", mediator = "selfperc",
+                           boot = TRUE, boot.ci.type = "perc",
+                           sims = params$n_boot)
+summary(med3)
+```
+
+## Excluding participants who wrote off-topic texts (preregistered)
+
+The preregistration specifies a sensitivity analysis excluding participants whose written text is unrelated to a situation of being loved (experimental condition) or to an everyday activity (control condition). The draft additionally notes that some participants padded short texts with gibberish to reach 300 characters. Because the texts are not part of the public data, this analysis requires a separate coding file with one row per participant: `subject` (the anonymized identifier) and `on_topic` (1 = text follows the instructions, 0 = off-topic or gibberish). Set `run_text_sensitivity: true` in the YAML header once the file exists.
+
+```{r text-sensitivity, eval = params$run_text_sensitivity}
+coding <- read.csv(params$text_coding_file)
+
+data.ontopic <- data.complete %>%
+  inner_join(coding, by = "subject") %>%
+  filter(on_topic == 1)
+
+table(Condition = data.ontopic$treatment)
+
+s_h2  <- compare_groups("manipCheck", data.ontopic)
+s_h1  <- compare_groups("intention",  data.ontopic)
+s_h13 <- compare_groups("intention3", data.ontopic)
+s_h3a <- compare_groups("selfperc",   data.ontopic)
+
+data.frame(
+  Test = c("H2: manipulation check", "H1: intention (6 items)",
+           "H1: intention (3 items)", "Self-perception"),
+  Result = c(s_h2$text, s_h1$text, s_h13$text, s_h3a$text)
+)
+
+set.seed(params$seed)
+s_med <- mediation::mediate(lm(selfperc ~ treatment, data = data.ontopic),
+                            lm(intention ~ treatment + selfperc, data = data.ontopic),
+                            treat = "treatment", mediator = "selfperc",
+                            boot = TRUE, boot.ci.type = "perc",
+                            sims = params$n_boot)
+summary(s_med)
+```
+
+# Exploratory analyses (not preregistered)
+
+## Small-telescopes test (Simonsohn, 2015)
+
+The preregistration justifies the sample size partly by Simonsohn's (2015) small-telescopes heuristic. Here we apply the corresponding test: *d*~33%~ is the effect size the original study (*N* = 141) had 33% power to detect. If the upper bound of the one-sided 95% confidence interval (i.e., the two-sided 90% CI) of the replication effect lies below *d*~33%~, the replication suggests the original study could not have meaningfully detected the effect. The split of the original sample into groups is not reported by Tang et al. (2025), so equal group sizes (70 and 71) are assumed.
+
+```{r small-telescopes}
+d33 <- pwr::pwr.t2n.test(n1 = 70, n2 = 71, sig.level = .05, power = 1/3)$d
+
+d90_6 <- compare_groups("intention",  data.complete, conf.level = .90)$d
+d90_3 <- compare_groups("intention3", data.complete, conf.level = .90)$d
+
+data.frame(
+  Scale     = c("Intention (6 items)", "Intention (3 items)"),
+  d         = round(c(d90_6$estimate, d90_3$estimate), 3),
+  CI90_low  = round(c(d90_6$conf.int[1], d90_3$conf.int[1]), 3),
+  CI90_high = round(c(d90_6$conf.int[2], d90_3$conf.int[2]), 3),
+  d33       = round(d33, 3),
+  Smaller_than_d33 = c(d90_6$conf.int[2] < d33, d90_3$conf.int[2] < d33)
+)
+```
+
+For the six-item scale, the upper bound of the 90% CI of the replication effect (`r fmt(d90_6$conf.int[2])`) was `r ifelse(d90_6$conf.int[2] < d33, "below", "not below")` *d*~33%~ = `r fmt(d33)`.
+
+# Supplementary tables
+
+## Table A1: Means, standard deviations, and correlations
+
+```{r table-a1}
+var_names <- c("treatment" = "Treatment",
+               "manipCheck" = "Manipulation check",
+               "intention" = "Intention",
+               "selfperc" = "Self-perception")
+
+df_summary <- data.complete[, names(var_names), drop = FALSE] %>%
+  mutate(across(everything(), as.numeric))
+
+corr_obj <- psych::corr.test(df_summary, use = "complete", method = "pearson", adjust = "none")
+r_mat <- corr_obj$r
+p_mat <- corr_obj$p
+
+star_label <- function(p) {
+  if (is.na(p)) return("")
+  if (p < .001) "***" else if (p < .01) "**" else if (p < .05) "*" else "ns"
+}
+
+format_r <- function(r) {
+  r_rounded <- round(r, 2)
+  if (abs(r_rounded) < .01) r_rounded <- 0
+  sub("^0", "", sprintf("%.2f", r_rounded))
+}
+
+k <- length(var_names)
+corr_table <- matrix("", k, k, dimnames = list(var_names, var_names))
+for (i in seq_len(k)) {
+  for (j in seq_len(k)) {
+    if (i == j) {
+      corr_table[i, j] <- "1.00"
+    } else {
+      corr_table[i, j] <- paste0(format_r(r_mat[i, j]), star_label(p_mat[i, j]))
+    }
+  }
+}
+
+table_a1 <- data.frame(
+  Variable = var_names,
+  M  = fmt(colMeans(df_summary)),
+  SD = fmt(apply(df_summary, 2, sd)),
+  corr_table,
+  check.names = FALSE,
+  row.names = NULL
+)
+
+names(table_a1) <- c("Variable", "M", "SD", names(var_names))
+
+kable(table_a1, align = "lrrcccc",
+      caption = sprintf("Table A1. Means, standard deviations, and correlations (N = %d)", nrow(df_summary)))
+```
+
+*Note.* Treatment is a dummy indicator (1 = experimental condition, 0 = control condition). Intention is the six-item scale. \* *p* < .05, \*\* *p* < .01, \*\*\* *p* < .001.
+
+# References
+
+Blatný, M., & Osecká, L. (1994). Rosenbergova škála sebehodnocení: Struktura globálního vztahu k sobě. *Československá psychologie, 38*(6), 481–488.
+
+Kumar, S., Gupta, K., Kumar, A., Singh, A., & Singh, R. K. (2023). Applying the theory of reasoned action to examine consumers' attitude and willingness to purchase organic foods. *International Journal of Consumer Studies, 47*(1), 118–135.
+
+Simonsohn, U. (2015). Small telescopes: Detectability and the evaluation of replication results. *Psychological Science, 26*(5), 559–569.
+
+Tang, D., Chen, J., Jiang, Q., Huang, H., & Zheng, M. (2025). How feeling loved inspires the purchase of green foods. *Journal of Environmental Psychology, 102*, 102523.
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```
