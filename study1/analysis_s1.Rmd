@@ -109,6 +109,59 @@ saveRDS(data, "data_s1_anonymized.RDS")
 writexl::write_xlsx(data, "data_s1_anonymized.xlsx")
 ```
 
+## Coding of open-ended texts (not run)
+
+The texts written by participants were coded separately to maintain anonymity. The coding file `text_coding_s1.csv` contains one row per participant with the anonymized identifier (`subject`) and a binary variable `on_topic` (1 = text follows the instructions, 0 = off-topic or gibberish). This file is not part of the public data set.  
+
+```{r anonymization, eval = FALSE}
+library(readxl)
+setwd("~/Google Drive/CUK/uceni/FSV/Kvant praktika/Love study 2025-2026 kvant praktika/s1 data and analyses")
+dat <- readxl::read_excel("text_coding2.xlsx", na = c("", "NA"))
+
+dat <- dat[order(dat$id),]
+
+# Create final text_code from three coders
+# - coders 1 and 2 agree (incl. both NA)  -> coder1
+# - coders 1 and 2 disagree               -> coder3
+ 
+# Treat two NAs as agreement; one NA vs. a code as disagreement
+agree <- (is.na(dat$coder1) & is.na(dat$coder2)) |
+         (!is.na(dat$coder1) & !is.na(dat$coder2) & dat$coder1 == dat$coder2)
+ 
+dat$final_code <- ifelse(agree, dat$coder1, dat$coder3)
+ 
+table(dat$final_code)
+
+# Check: disagreements that coder3 did not resolve
+# Add row-level flags so unresolved cases can be filtered or reviewed later.
+dat$unresolved <- as.integer(!agree & is.na(dat$coder3))
+
+# Recode the Czech category labels (as entered by coders) into English labels.
+text_recode_en <- function(x) {
+  dplyr::recode(
+    x,
+    "Irelevantní, nesmyslné" = "irrelevant_or_nonsense_(not_valid)",
+    "Každodenní aktivity (legitimní výrok)" = "everyday_activities_(valid)",
+    "Neví, cítí se špatně, necítí se milován(a)" = "uncertain_or_unloved_(not_valid)",
+    "Obecné výroky (ne o sobe)" = "general_statements_(not_valid)",
+    "Prátelská/ od bližního" = "friend's_or_other_person's_love_(valid)",
+    "Rodinná" = "family_love_(valid)",
+    "Romantická" = "romantic_love_(valid)",
+    "Více typů lásky" = "multiple_kinds_of_love_(valid)",
+    .default = NA_character_
+  )
+}
+
+dat <- dat %>%
+  dplyr::mutate(across(c(coder1, coder2, coder3, final_code), text_recode_en, .names = "{.col}_en"))
+
+table(dat$condition, dat$final_code_en, useNA = "ifany")
+dat$text <- NULL  # remove the original texts from the anonymized data 
+
+saveRDS(dat, "text_codes.RDS")
+writexl::write_xlsx(dat, "text_codes.xlsx")
+```
+
 ## Loading the anonymized data
 
 ```{r load-data}
