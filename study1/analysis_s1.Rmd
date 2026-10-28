@@ -3,10 +3,12 @@ title: "Feeling Loved and Purchase Intention for Ecological Products: Replicatio
 date: "`r format(Sys.Date(), '%d %B %Y')`"
 params:
   data_url: "https://github.com/janurban/metarials-love-study/blob/main/study1/data_s1_anonymized.RDS?raw=true"
-  n_boot: 5000            # bootstrap draws for the mediation model (set lower, e.g. 500, while drafting)
+  codes_url: "https://github.com/janurban/metarials-love-study/blob/main/study1/text_codes.RDS?raw=true"
+  codes_id: "id"          # participant identifier in text_codes.RDS
+  data_id: "syst.id"      # matching identifier in data_s1_anonymized.RDS (checked after the merge)
+  n_boot: 5000            # bootstrap draws for the mediation models (set lower, e.g. 500, while drafting)
+  n_boot_kappa: 2000      # bootstrap draws for the confidence intervals of Cohen's kappa
   seed: 1234
-  run_text_sensitivity: false   # set to true once the manipulation texts have been coded (see Section 7.2)
-  text_coding_file: "text_coding_s1.csv"
 ---
 
 ```{r setup, include = FALSE}
@@ -34,12 +36,10 @@ This document reproduces all analyses of Study 1, a preregistered replication of
 
 ## Notes on correspondence between the preregistration, the script, and the draft
 
-The following points should be resolved (or reported as deviations) before submission:
-
-1. **Primary intention measure.** The preregistration states that the *three-item* scale from Tang et al. (2025) is used for all tests and the remaining items are used in a sensitivity analysis. The analysis script and the draft use the *six-item* scale as the primary measure and the three-item scale as exploratory. This document follows the script (six-item scale as primary) but reports the three-item results right next to it in Section 5.2, so either can be designated as primary. If the six-item scale stays primary, this should be reported as a deviation from the preregistration (justified by the reliability of the three-item scale; see Section 4).
+1. **Primary intention measure.** As preregistered, all confirmatory tests use the *three-item* intention scale from Tang et al. (2025). The *six-item* scale (three items from Tang et al. plus three from Kumar et al., 2023) is used in a sensitivity analysis (see *Sensitivity analyses*). Note that the draft currently reports the six-item scale as the main measure; the Results section of the draft needs to be updated accordingly.
 2. **Hypothesis labels.** The preregistration labels the mediation hypothesis H4 in the hypothesis section and H3 in the analysis plan. This document uses H3.
-3. **Sensitivity analysis excluding off-topic texts.** Preregistered, but not yet implemented in the script; the written texts are removed from the anonymized data. Section 7.2 contains the code, which runs once a file with the coding of the texts is available.
-4. **Sign convention.** The original script used `t.test()` and `cohen.d()` with the formula interface, which computes *control − experimental* (hence the negative *t* and *d* for the manipulation check in the draft). Here all differences are computed as **experimental − control**, so positive values indicate an effect in the predicted direction. Absolute values are identical to the draft.
+3. **Sensitivity analysis excluding invalid texts.** Preregistered and implemented under *Sensitivity analyses*, based on the coding of the manipulation texts (see *Validity of the manipulation texts*). A text is treated as *valid* when its final code matches the instructions of the participant's condition: a love-related code in the feeling-loved condition, everyday activities in the control condition. All other codes are treated as invalid; this includes otherwise valid texts that describe the content of the other condition (flagged as `wrong_condition` when processing the codes). Every completed questionnaire must have a final code; this is checked before the analyses.
+4. **Sign convention.** All differences are computed as **experimental − control**, so positive values indicate an effect in the predicted direction. The original script used the formula interface of `t.test()` and `cohen.d()`, which computes control − experimental (hence the negative *t* and *d* in the draft). Absolute values are identical.
 5. **Minimum text length.** The informed consent states a minimum of 130 characters, whereas the confirmation page and the writing task require 300 characters. The Methods section should report 300 characters (the enforced minimum) and may note the discrepancy.
 
 # Setup
@@ -57,6 +57,7 @@ fmt   <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
 fmt0  <- function(x, digits = 2) sub("^(-?)0\\.", "\\1.", fmt(x, digits))   # no leading zero (APA)
 fmt_p <- function(p) ifelse(p < .001, "< .001", paste("=", fmt0(p, 3)))
 pct   <- function(x, digits = 0) paste0(fmt(100 * x, digits), "%")
+supported <- function(ok) ifelse(ok, "supported", "not supported")
 
 # Welch two-sample t-test and Cohen's d, computed as experimental (1) minus control (0)
 compare_groups <- function(var, data, conf.level = .95) {
@@ -66,12 +67,22 @@ compare_groups <- function(var, data, conf.level = .95) {
   dd <- effsize::cohen.d(x1, x0, conf.level = conf.level)
   list(
     t = tt, d = dd,
+    ok = tt$p.value < .05 & tt$statistic > 0,   # significant and in the predicted direction
     n1 = length(x1), m1 = mean(x1), sd1 = sd(x1),
     n0 = length(x0), m0 = mean(x0), sd0 = sd(x0),
     text = sprintf("*t*(%s) = %s, *p* %s, *d* = %s, 95%% CI [%s, %s]",
                    fmt(tt$parameter), fmt(tt$statistic), fmt_p(tt$p.value),
                    fmt(dd$estimate), fmt(dd$conf.int[1]), fmt(dd$conf.int[2]))
   )
+}
+
+# One row of a results table from compare_groups() output
+result_row <- function(label, res) {
+  data.frame(Test = label,
+             `Experimental M (SD)` = sprintf("%.2f (%.2f)", res$m1, res$sd1),
+             `Control M (SD)`      = sprintf("%.2f (%.2f)", res$m0, res$sd0),
+             Result = res$text,
+             check.names = FALSE)
 }
 
 # Reliability: Cronbach's alpha, McDonald's omega hierarchical and omega total
@@ -83,6 +94,19 @@ reliability <- function(items) {
   }
   c(alpha = unname(om$alpha), omega_h = unname(om$omega_h), omega_t = unname(om$omega.tot))
 }
+
+# Summary table of a mediation::mediate() object
+med_summary <- function(med) {
+  data.frame(
+    Effect   = c("Indirect effect (ACME)", "Direct effect (ADE)", "Total effect", "Proportion mediated"),
+    Estimate = c(med$d.avg, med$z.avg, med$tau.coef, med$n.avg),
+    Lower    = c(med$d.avg.ci[1], med$z.avg.ci[1], med$tau.ci[1], med$n.avg.ci[1]),
+    Upper    = c(med$d.avg.ci[2], med$z.avg.ci[2], med$tau.ci[2], med$n.avg.ci[2]),
+    p        = c(med$d.avg.p, med$z.avg.p, med$tau.p, med$n.avg.p),
+    row.names = NULL
+  )
+}
+med_ok <- function(med) med$d.avg > 0 & med$d.avg.ci[1] > 0   # positive indirect effect, CI excludes 0
 ```
 
 # Data
@@ -92,6 +116,7 @@ reliability <- function(items) {
 The raw data exported from LimeSurvey were anonymized with the code below before publication. The code is shown for transparency and is not evaluated, because the raw data are not public. The written texts (manipulation task) were deleted from the public data set because they may contain identifying information.
 
 ```{r anonymization, eval = FALSE}
+setwd("~honza/Google Drive/CUK/uceni/FSV/Kvant praktika/Love study 2025-2026 kvant praktika/s1 data and analyses")
 data <- readxl::read_excel("results-survey997596.xlsx")
 
 # renaming the two id variables in the dataset
@@ -111,11 +136,11 @@ writexl::write_xlsx(data, "data_s1_anonymized.xlsx")
 
 ## Coding of open-ended texts (not run)
 
-The texts written by participants were coded separately to maintain anonymity. The coding file `text_coding_s1.csv` contains one row per participant with the anonymized identifier (`subject`) and a binary variable `on_topic` (1 = text follows the instructions, 0 = off-topic or gibberish). This file is not part of the public data set.  
+The texts written in the manipulation task were coded independently by two coders (coder 1 and coder 2) into content categories; disagreements were resolved by a third coder (coder 3). The code below creates the final code and translates the Czech category labels into English. The texts themselves are removed before the codes are published in `text_codes.RDS`, which is loaded below (*Loading the anonymized text codes*).
 
-```{r anonymization, eval = FALSE}
+```{r text-coding, eval = FALSE}
 library(readxl)
-setwd("~/Google Drive/CUK/uceni/FSV/Kvant praktika/Love study 2025-2026 kvant praktika/s1 data and analyses")
+setwd("~honza/Google Drive/CUK/uceni/FSV/Kvant praktika/Love study 2025-2026 kvant praktika/s1 data and analyses")
 dat <- readxl::read_excel("text_coding2.xlsx", na = c("", "NA"))
 
 dat <- dat[order(dat$id),]
@@ -123,13 +148,13 @@ dat <- dat[order(dat$id),]
 # Create final text_code from three coders
 # - coders 1 and 2 agree (incl. both NA)  -> coder1
 # - coders 1 and 2 disagree               -> coder3
- 
+
 # Treat two NAs as agreement; one NA vs. a code as disagreement
 agree <- (is.na(dat$coder1) & is.na(dat$coder2)) |
          (!is.na(dat$coder1) & !is.na(dat$coder2) & dat$coder1 == dat$coder2)
- 
+
 dat$final_code <- ifelse(agree, dat$coder1, dat$coder3)
- 
+
 table(dat$final_code)
 
 # Check: disagreements that coder3 did not resolve
@@ -155,8 +180,7 @@ text_recode_en <- function(x) {
 dat <- dat %>%
   dplyr::mutate(across(c(coder1, coder2, coder3, final_code), text_recode_en, .names = "{.col}_en"))
 
-table(dat$condition, dat$final_code_en, useNA = "ifany")
-dat$text <- NULL  # remove the original texts from the anonymized data 
+dat$text <- NULL  # remove the original texts from the anonymized data
 
 saveRDS(dat, "text_codes.RDS")
 writexl::write_xlsx(dat, "text_codes.xlsx")
@@ -179,6 +203,15 @@ data <- data %>%
                 ~ as.numeric(gsub("A", "", .x))))
 ```
 
+## Loading the anonymized text codes
+
+The codes are merged with the survey data under *Validity of the manipulation texts*, after the analysis sample has been defined.
+
+```{r load-codes}
+codes <- read_rds_from_url(params$codes_url)
+dplyr::glimpse(codes)
+```
+
 ## Participant flow
 
 Participants who were screened out before randomization (variable `random` missing) are excluded from the flow. Participants who were randomized but did not reach the last page (page 17) are classified as drop-outs. As preregistered, the main analyses include all participants who completed the study.
@@ -188,7 +221,8 @@ data$status <- "screenout"
 data$status <- ifelse(!is.na(data$random), "dropout", data$status)
 data$status <- ifelse(data$lastpage == 17, "complete", data$status)
 
-data <- data %>% filter(status != "screenout")
+n_screenout <- sum(data$status == "screenout")
+data <- data %>% filter(status != "screenout")   # from here on: randomized participants only
 
 flow <- data %>%
   count(status) %>%
@@ -200,19 +234,26 @@ n_complete <- sum(data$status == "complete")
 n_dropout  <- sum(data$status == "dropout")
 ```
 
-In total, `r n_entered` participants entered the study and `r n_complete` (`r pct(n_complete / n_entered)`) completed it; `r n_dropout` participants dropped out after randomization.
+In total, `r n_entered` participants entered the study (after excluding `r n_screenout` participants who were screened out before randomization) and `r n_complete` (`r pct(n_complete / n_entered)`) completed it; `r n_dropout` participants dropped out after randomization.
 
-### Attrition by condition and by page (exploratory)
+### Drop-out by condition (exploratory)
 
-The draft notes that most drop-outs happened in the writing task. Because condition was assigned before the writing task, differential attrition across conditions could bias the comparison of completers, so we report drop-out by condition and the last page reached by drop-outs. This analysis was not preregistered.
+The draft notes that most drop-outs happened in the writing task. Because condition was assigned before the writing task, differential drop-out across conditions could bias the comparison of completers. This analysis was not preregistered. It includes only randomized participants, so screen-outs (who were never assigned to a condition) are not part of it.
 
-```{r attrition}
+```{r dropout-by-condition}
 data <- data %>%
   mutate(condition = factor(random, levels = c(1, 2), labels = c("control", "experimental")))
 
-attrition_tab <- table(Condition = data$condition, Status = data$status)
-attrition_tab
-round(prop.table(attrition_tab, margin = 1), 3)
+dropout_tab <- data %>%
+  group_by(Condition = condition) %>%
+  summarise(Randomized = n(),
+            Completed  = sum(status == "complete"),
+            `Dropped out` = sum(status == "dropout"),
+            `Drop-out rate` = pct(mean(status == "dropout"), 1),
+            .groups = "drop")
+kable(dropout_tab, caption = "Drop-out by condition (randomized participants only; screen-outs excluded)")
+
+attrition_tab  <- table(Condition = data$condition, Status = data$status)
 attrition_test <- chisq.test(attrition_tab)
 attrition_test
 
@@ -220,10 +261,12 @@ attrition_test
 data %>%
   filter(status == "dropout") %>%
   count(condition, lastpage) %>%
-  pivot_wider(names_from = condition, values_from = n, values_fill = 0)
+  pivot_wider(names_from = condition, values_from = n, values_fill = 0) %>%
+  arrange(lastpage) %>%
+  kable(caption = "Last page reached by drop-outs, by condition")
 ```
 
-Drop-out rates were `r pct(prop.table(attrition_tab, 1)["control", "dropout"])` in the control condition and `r pct(prop.table(attrition_tab, 1)["experimental", "dropout"])` in the experimental condition, χ²(`r attrition_test$parameter`) = `r fmt(attrition_test$statistic)`, *p* `r fmt_p(attrition_test$p.value)`.
+Of the participants randomized to the control condition, `r dropout_tab[["Dropped out"]][dropout_tab$Condition == "control"]` (`r dropout_tab[["Drop-out rate"]][dropout_tab$Condition == "control"]`) dropped out, compared with `r dropout_tab[["Dropped out"]][dropout_tab$Condition == "experimental"]` (`r dropout_tab[["Drop-out rate"]][dropout_tab$Condition == "experimental"]`) in the experimental condition, χ²(`r attrition_test$parameter`) = `r fmt(attrition_test$statistic)`, *p* `r fmt_p(attrition_test$p.value)`.
 
 ## Completion times (appendix; not reported in the paper)
 
@@ -293,17 +336,17 @@ data.complete$treatment <- data.complete$random - 1
 
 ## Purchase intention
 
-Items 1–3 were adapted from Tang et al. (2025), items 4–6 from Kumar et al. (2023). Item 3 is reverse-coded. Scale scores are item means (1–7).
+Items 1–3 were adapted from Tang et al. (2025), items 4–6 from Kumar et al. (2023). Item 3 is reverse-coded. Scale scores are item means (1–7). As preregistered, the **three-item scale (`intention`) is the primary measure**; the six-item scale (`intention6`) is used in a sensitivity analysis.
 
 ```{r intention}
-intention <- data.complete %>% dplyr::select(intention_1:intention_6)
-intention[, 3] <- 8 - intention[, 3]                       # reverse-code item 3
+intention_items <- data.complete %>% dplyr::select(intention_1:intention_6)
+intention_items[, 3] <- 8 - intention_items[, 3]               # reverse-code item 3
 
-data.complete$intention  <- rowMeans(intention)            # six-item scale
-data.complete$intention3 <- rowMeans(intention[, 1:3])     # three-item scale (Tang et al., 2025)
+data.complete$intention  <- rowMeans(intention_items[, 1:3])   # three-item scale (primary; Tang et al., 2025)
+data.complete$intention6 <- rowMeans(intention_items)          # six-item scale (sensitivity analysis)
 
-rel_int6 <- reliability(intention)
-rel_int3 <- reliability(intention[, 1:3])
+rel_int3 <- reliability(intention_items[, 1:3])
+rel_int6 <- reliability(intention_items)
 ```
 
 ## Self-perception (self-esteem; mediator)
@@ -324,43 +367,137 @@ rel_self <- reliability(selfperc)
 
 ```{r reliability-table}
 rel_table <- rbind(
-  "Intention (6 items)"       = rel_int6,
-  "Intention (3 items, Tang et al.)" = rel_int3,
-  "Self-perception (10 items)" = rel_self
+  "Intention (3 items, Tang et al.; primary)" = rel_int3,
+  "Intention (6 items; sensitivity analysis)" = rel_int6,
+  "Self-perception (10 items)"                = rel_self
 )
 kable(rel_table, digits = 2,
       col.names = c("Cronbach's alpha", "Omega hierarchical", "Omega total"))
 ```
 
-The six-item intention scale had good internal consistency, α = `r fmt0(rel_int6["alpha"])`, ω~h~ = `r fmt0(rel_int6["omega_h"])`, ω~t~ = `r fmt0(rel_int6["omega_t"])`. Using only the three original items from Tang et al. (2025) would reduce reliability, α = `r fmt0(rel_int3["alpha"])`, ω~t~ = `r fmt0(rel_int3["omega_t"])`. The self-perception scale had α = `r fmt0(rel_self["alpha"])`, ω~h~ = `r fmt0(rel_self["omega_h"])`, ω~t~ = `r fmt0(rel_self["omega_t"])`.
+The three-item intention scale (primary measure) had α = `r fmt0(rel_int3["alpha"])`, ω~t~ = `r fmt0(rel_int3["omega_t"])`. Extending the scale with the three items from Kumar et al. (2023) increased reliability, α = `r fmt0(rel_int6["alpha"])`, ω~h~ = `r fmt0(rel_int6["omega_h"])`, ω~t~ = `r fmt0(rel_int6["omega_t"])`. The self-perception scale had α = `r fmt0(rel_self["alpha"])`, ω~h~ = `r fmt0(rel_self["omega_h"])`, ω~t~ = `r fmt0(rel_self["omega_t"])`.
 
 Note: omega hierarchical is not well defined for a three-item scale (psych::omega extracts three group factors by default), so only alpha and omega total are interpreted for the three-item version.
 
+## Validity of the manipulation texts
+
+The text codes are merged with the analysis sample. Each code is classified as valid or invalid relative to the participant's condition: in the feeling-loved condition, the four love-related codes are valid; in the control condition, only "everyday activities" is valid. Validity is derived separately for coder 1, coder 2, and the final code.
+
+```{r merge-codes}
+love_codes     <- c("family_love_(valid)", "romantic_love_(valid)",
+                    "friend's_or_other_person's_love_(valid)", "multiple_kinds_of_love_(valid)")
+everyday_codes <- "everyday_activities_(valid)"
+
+# TRUE = valid for the participant's condition, FALSE = invalid, NA = no code
+is_valid <- function(code, treatment) {
+  dplyr::case_when(is.na(code)    ~ NA,
+                   treatment == 1 ~ code %in% love_codes,
+                   treatment == 0 ~ code %in% everyday_codes)
+}
+
+codes_small <- codes %>%
+  mutate(
+    join_id = as.character(.data[[params$codes_id]]),
+    code_condition = dplyr::recode(
+      as.character(condition),
+      "treatment" = "experimental",
+      "experimental" = "experimental",
+      "control" = "control",
+      .default = NA_character_
+    )
+  ) %>%
+  mutate(
+    wrong_condition = case_when(
+      is.na(final_code_en) ~ NA_integer_,
+      code_condition == "experimental" ~ as.integer(!(final_code_en %in% love_codes)),
+      code_condition == "control" ~ as.integer(!(final_code_en %in% everyday_codes)),
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  dplyr::select(join_id, code_condition, coder1_en, coder2_en, coder3_en, final_code_en,
+                unresolved, wrong_condition, any_of(c("single_coder")))
+stopifnot(!any(duplicated(codes_small$join_id)))
+
+data.complete <- data.complete %>%
+  mutate(join_id = as.character(.data[[params$data_id]]),
+         coded   = join_id %in% codes_small$join_id) %>%
+  left_join(codes_small, by = "join_id") %>%
+  mutate(valid_c1    = is_valid(coder1_en, treatment),
+         valid_c2    = is_valid(coder2_en, treatment),
+         valid_final = is_valid(final_code_en, treatment))
+
+n_coded   <- sum(data.complete$coded)
+n_uncoded <- sum(!data.complete$coded)
+```
+
+`r n_coded` of `r nrow(data.complete)` completers were matched to a text code (`r n_uncoded` without a code).
+
+**Checks of the codes.** The chunk below runs three checks on all randomized participants (completers and drop-outs) and stops the knit if any of them fails:
+
+1. *Merge.* Each condition label in the codes file must correspond to exactly one condition in the survey data, and every merged case must have a matching condition. A mismatch indicates that `codes_id` / `data_id` in the YAML header point to non-matching identifiers, or an error in the codes file.
+2. *Completeness.* Every completed questionnaire must have a final code; missing codes are allowed only for unfinished questionnaires.
+3. *Condition flag* (only if `text_codes.RDS` contains `wrong_condition`). The flag created when processing the codes must agree with the condition-specific validity derived here.
+
+```{r code-checks}
+code_status <- data %>%
+  mutate(
+    join_id = as.character(.data[[params$data_id]]),
+    Survey_condition = dplyr::recode(as.character(random),
+                                     "1" = "control",
+                                     "2" = "experimental",
+                                     .default = NA_character_)
+  ) %>%
+  left_join(codes_small, by = "join_id") %>%
+  mutate(Code = case_when(!join_id %in% codes_small$join_id ~ "not in codes file",
+                          is.na(final_code_en)              ~ "in codes file, no final code",
+                          TRUE                              ~ "final code present"))
+
+# Codes-file identifiers without a randomized participant (e.g., screen-outs)
+n_orphan <- length(setdiff(codes_small$join_id, code_status$join_id))
+
+# 1. Merge check
+in_codes <- code_status %>%
+  filter(Code != "not in codes file") %>%
+  mutate(Codes_condition = as.character(code_condition))
+
+cond_check <- table(Survey = in_codes$Survey_condition, Codes = in_codes$Codes_condition, useNA = "ifany")
+cond_check
+
+mismatch <- in_codes %>%
+  filter(is.na(Codes_condition) | is.na(Survey_condition) | Survey_condition != Codes_condition)
+
+if (nrow(mismatch) > 0) {
+  stop(sprintf("Merge check failed: %d case(s) with a condition that does not match the codes file (%s: %s). Check codes_id / data_id and the codes file.",
+               nrow(mismatch), params$data_id, paste(head(mismatch$join_id, 20), collapse = ", ")))
+}
+
+# 2. Completeness check
+completeness_tab <- table(Status = code_status$status, Code = code_status$Code)
+completeness_tab
+
+missing_complete <- code_status %>% filter(status == "complete", Code != "final code present")
+if (nrow(missing_complete) > 0) {
+  stop(sprintf("Completeness check failed: %d completed questionnaire(s) without a final code (%s: %s).",
+               nrow(missing_complete), params$data_id,
+               paste(head(missing_complete$join_id, 20), collapse = ", ")))
+}
+
+# 3. Condition flag check
+if ("wrong_condition" %in% names(data.complete)) {
+  derived_flag <- grepl("_\\(valid\\)$", data.complete$final_code_en) & data.complete$valid_final %in% FALSE
+  flag_mismatch <- data.complete %>% filter(coded, (wrong_condition == 1) != derived_flag)
+  if (nrow(flag_mismatch) > 0) {
+    stop(sprintf("Condition flag check failed: %d case(s) where wrong_condition disagrees with the derived validity (%s: %s). Check ctrl_label / exp_label in the coding script.",
+                 nrow(flag_mismatch), params$data_id, paste(head(flag_mismatch$join_id, 20), collapse = ", ")))
+  }
+}
+```
+
+All checks passed. All `r sum(code_status$status == "complete")` completed questionnaires have a final code; of the `r sum(code_status$status == "dropout")` drop-outs, `r sum(code_status$status == "dropout" & code_status$Code == "final code present")` have a final code. `r n_orphan` identifier(s) in the codes file do not belong to a randomized participant.
+
 # Descriptive statistics
 
-```{r descriptives-by-group}
-desc_vars   <- c(manipCheck = "Manipulation check", intention = "Intention (6 items)",
-                 intention3 = "Intention (3 items)", selfperc = "Self-perception")
-
-n_ctrl <- sum(data.complete$treatment == 0)
-n_exp  <- sum(data.complete$treatment == 1)
-
-table_a2 <- data.complete %>%
-  dplyr::select(treatment, all_of(names(desc_vars))) %>%
-  pivot_longer(-treatment, names_to = "var") %>%
-  group_by(var, treatment) %>%
-  summarise(cell = sprintf("%.2f (%.2f)", mean(value), sd(value)), .groups = "drop") %>%
-  pivot_wider(names_from = treatment, values_from = cell) %>%
-  mutate(Variable = desc_vars[var]) %>%
-  arrange(match(var, names(desc_vars))) %>%
-  dplyr::select(Variable, `0`, `1`)
-
-kable(table_a2,
-      col.names = c("Variable",
-                    sprintf("Control group (n = %d)", n_ctrl),
-                    sprintf("Experimental group (n = %d)", n_exp)),
-      caption = "Table A2. Descriptive statistics, M (SD), for the control and experimental groups")
-```
+Means and standard deviations by condition are reported in Table A2 and means, standard deviations, and correlations in Table A1 (see *Supplementary tables*).
 
 # Confirmatory analyses
 
@@ -374,38 +511,30 @@ h2$t
 h2$d
 ```
 
-Participants in the feeling-loved condition reported feeling more loved (*M* = `r fmt(h2$m1)`, *SD* = `r fmt(h2$sd1)`) than participants in the control condition (*M* = `r fmt(h2$m0)`, *SD* = `r fmt(h2$sd0)`), `r h2$text`. **H2 was `r ifelse(h2$t$p.value < .05 & h2$t$statistic > 0, "supported", "not supported")`.**
+Participants in the feeling-loved condition reported feeling more loved (*M* = `r fmt(h2$m1)`, *SD* = `r fmt(h2$sd1)`) than participants in the control condition (*M* = `r fmt(h2$m0)`, *SD* = `r fmt(h2$sd0)`), `r h2$text`. **H2 was `r supported(h2$ok)`.**
 
 ## H1: Effect of the manipulation on purchase intention
 
 ```{r h1}
-h1 <- compare_groups("intention", data.complete)     # six-item scale (primary in script/draft)
+h1 <- compare_groups("intention", data.complete)   # three-item scale (preregistered primary measure)
 h1$t
 h1$d
-
-h1_3 <- compare_groups("intention3", data.complete)  # three-item scale (primary in preregistration)
-h1_3$t
-h1_3$d
 ```
 
-Purchase intention (six-item scale) did not differ substantially between the feeling-loved condition (*M* = `r fmt(h1$m1)`, *SD* = `r fmt(h1$sd1)`) and the control condition (*M* = `r fmt(h1$m0)`, *SD* = `r fmt(h1$sd0)`), `r h1$text`. The result was the same for the original three-item scale (*M*~exp~ = `r fmt(h1_3$m1)`, *M*~ctrl~ = `r fmt(h1_3$m0)`), `r h1_3$text`. **H1 was `r ifelse(h1$t$p.value < .05 & h1$t$statistic > 0, "supported", "not supported")` (six-item scale) and `r ifelse(h1_3$t$p.value < .05 & h1_3$t$statistic > 0, "supported", "not supported")` (three-item scale).**
+Purchase intention did not differ substantially between the feeling-loved condition (*M* = `r fmt(h1$m1)`, *SD* = `r fmt(h1$sd1)`) and the control condition (*M* = `r fmt(h1$m0)`, *SD* = `r fmt(h1$sd0)`), `r h1$text`. **H1 was `r supported(h1$ok)`.**
 
 ## Replication verdict
 
 ```{r verdict}
-h1_ok   <- h1$t$p.value   < .05 & h1$t$statistic   > 0
-h1_3_ok <- h1_3$t$p.value < .05 & h1_3$t$statistic > 0
-h2_ok   <- h2$t$p.value   < .05 & h2$t$statistic   > 0
-
 data.frame(
-  Criterion = c("H1 (6-item intention)", "H1 (3-item intention)", "H2 (manipulation check)"),
-  d   = round(c(h1$d$estimate, h1_3$d$estimate, h2$d$estimate), 2),
-  p   = signif(c(h1$t$p.value, h1_3$t$p.value, h2$t$p.value), 3),
-  Met = c(h1_ok, h1_3_ok, h2_ok)
+  Criterion = c("H1 (intention, 3 items)", "H2 (manipulation check)"),
+  d   = round(c(h1$d$estimate, h2$d$estimate), 2),
+  p   = signif(c(h1$t$p.value, h2$t$p.value), 3),
+  Met = c(h1$ok, h2$ok)
 )
 ```
 
-Following the preregistered criterion (significant effects in the predicted direction for both H1 and H2), the replication was **`r ifelse(h1_ok & h2_ok, "successful", "not successful")`** with the six-item scale and **`r ifelse(h1_3_ok & h2_ok, "successful", "not successful")`** with the three-item scale. The replication effect on intention (*d* = `r fmt(h1$d$estimate)`) was considerably smaller than the original effect (*d* = 0.53, 95% CI [0.19, 0.87]).
+Following the preregistered criterion (significant effects in the predicted direction for both H1 and H2), the replication was **`r ifelse(h1$ok & h2$ok, "successful", "not successful")`**. The replication effect on intention (*d* = `r fmt(h1$d$estimate)`) was considerably smaller than the original effect (*d* = 0.53, 95% CI [0.19, 0.87]).
 
 # Extension: Mediation by self-perception (H3)
 
@@ -424,7 +553,7 @@ Self-perception did not differ substantially between the feeling-loved condition
 
 ## Mediation model
 
-The mediation model regresses self-perception on treatment (mediator model) and intention on treatment and self-perception (outcome model). The indirect effect (ACME) is tested with a nonparametric percentile bootstrap (`r params$n_boot` resamples) using the *mediation* package.
+The mediation model regresses self-perception on treatment (mediator model) and intention (three-item scale) on treatment and self-perception (outcome model). The indirect effect (ACME) is tested with a nonparametric percentile bootstrap (`r params$n_boot` resamples) using the *mediation* package.
 
 ```{r mediation, cache = TRUE}
 set.seed(params$seed)
@@ -441,74 +570,183 @@ summary(med)
 ```
 
 ```{r mediation-table}
-med_table <- data.frame(
-  Effect   = c("Indirect effect (ACME)", "Direct effect (ADE)", "Total effect", "Proportion mediated"),
-  Estimate = c(med$d.avg, med$z.avg, med$tau.coef, med$n.avg),
-  Lower    = c(med$d.avg.ci[1], med$z.avg.ci[1], med$tau.ci[1], med$n.avg.ci[1]),
-  Upper    = c(med$d.avg.ci[2], med$z.avg.ci[2], med$tau.ci[2], med$n.avg.ci[2]),
-  p        = c(med$d.avg.p, med$z.avg.p, med$tau.p, med$n.avg.p)
-)
-kable(med_table, digits = 3, row.names = FALSE,
+kable(med_summary(med), digits = 3,
       col.names = c("Effect", "Estimate", "95% CI lower", "95% CI upper", "p"),
-      caption = sprintf("Mediation by self-perception (N = %d, %d bootstrap resamples)",
+      caption = sprintf("Mediation by self-perception, intention (3 items) as outcome (N = %d, %d bootstrap resamples)",
                         med$nobs, params$n_boot))
 
-h3_ok <- med$d.avg > 0 & med$d.avg.ci[1] > 0
+h3_ok  <- med_ok(med)
 coef_y <- summary(model_y)$coefficients
 ```
 
-The indirect effect of the manipulation on intention through self-perception was *b* = `r fmt(med$d.avg, 3)`, 95% CI [`r fmt(med$d.avg.ci[1], 3)`, `r fmt(med$d.avg.ci[2], 3)`]. Self-perception was `r ifelse(coef_y["selfperc", 4] < .05, "", "only weakly and not significantly ")`associated with intention when controlling for treatment, *b* = `r fmt(coef_y["selfperc", 1], 3)`, *SE* = `r fmt(coef_y["selfperc", 2], 3)`, *p* `r fmt_p(coef_y["selfperc", 4])`. **H3 was `r ifelse(h3_ok, "supported", "not supported")`.** Note that the proportion mediated is not interpretable when the total effect is close to zero.
+The indirect effect of the manipulation on intention through self-perception was *b* = `r fmt(med$d.avg, 3)`, 95% CI [`r fmt(med$d.avg.ci[1], 3)`, `r fmt(med$d.avg.ci[2], 3)`]. Self-perception was `r ifelse(coef_y["selfperc", 4] < .05, "", "only weakly and not significantly ")`associated with intention when controlling for treatment, *b* = `r fmt(coef_y["selfperc", 1], 3)`, *SE* = `r fmt(coef_y["selfperc", 2], 3)`, *p* `r fmt_p(coef_y["selfperc", 4])`. **H3 was `r supported(h3_ok)`.** Note that the proportion mediated is not interpretable when the total effect is close to zero.
 
-# Sensitivity analyses
+# Sensitivity analyses (preregistered)
 
-## Alternative intention scale
+## Six-item intention scale
 
-The results for the three-item scale are reported alongside the six-item scale in Section 5.2. For completeness, the mediation model is re-estimated with the three-item scale.
+As preregistered, H1 and the mediation model (H3) are re-estimated with the six-item intention scale.
 
-```{r mediation-3items, cache = TRUE}
+```{r h1-6items}
+h1_6 <- compare_groups("intention6", data.complete)
+h1_6$t
+h1_6$d
+```
+
+```{r mediation-6items, cache = TRUE}
 set.seed(params$seed)
-model_y3 <- lm(intention3 ~ treatment + selfperc, data = data.complete)
-med3 <- mediation::mediate(model_m, model_y3,
+model_y6 <- lm(intention6 ~ treatment + selfperc, data = data.complete)
+med6 <- mediation::mediate(model_m, model_y6,
                            treat = "treatment", mediator = "selfperc",
                            boot = TRUE, boot.ci.type = "perc",
                            sims = params$n_boot)
-summary(med3)
+summary(med6)
 ```
 
-## Excluding participants who wrote off-topic texts (preregistered)
+```{r mediation-6items-table}
+kable(med_summary(med6), digits = 3,
+      col.names = c("Effect", "Estimate", "95% CI lower", "95% CI upper", "p"),
+      caption = "Mediation by self-perception, intention (6 items) as outcome")
+```
 
-The preregistration specifies a sensitivity analysis excluding participants whose written text is unrelated to a situation of being loved (experimental condition) or to an everyday activity (control condition). The draft additionally notes that some participants padded short texts with gibberish to reach 300 characters. Because the texts are not part of the public data, this analysis requires a separate coding file with one row per participant: `subject` (the anonymized identifier) and `on_topic` (1 = text follows the instructions, 0 = off-topic or gibberish). Set `run_text_sensitivity: true` in the YAML header once the file exists.
+With the six-item scale, intention again did not differ substantially between the feeling-loved condition (*M* = `r fmt(h1_6$m1)`, *SD* = `r fmt(h1_6$sd1)`) and the control condition (*M* = `r fmt(h1_6$m0)`, *SD* = `r fmt(h1_6$sd0)`), `r h1_6$text`, so H1 was `r supported(h1_6$ok)`. The indirect effect through self-perception was *b* = `r fmt(med6$d.avg, 3)`, 95% CI [`r fmt(med6$d.avg.ci[1], 3)`, `r fmt(med6$d.avg.ci[2], 3)`], so H3 was `r supported(med_ok(med6))`.
 
-```{r text-sensitivity, eval = params$run_text_sensitivity}
-coding <- read.csv(params$text_coding_file)
+## Excluding participants with invalid texts
 
-data.ontopic <- data.complete %>%
-  inner_join(coding, by = "subject") %>%
-  filter(on_topic == 1)
+The preregistration specifies a sensitivity analysis that replicates all analyses after excluding participants whose written text is unrelated to a situation of being loved (feeling-loved condition) or to everyday activities (control condition). Here, participants are retained only if the final code of their text is valid for their condition (see *Validity of the manipulation texts*); participants with an invalid final code, or without a final code (uncoded or unresolved disagreement), are excluded.
 
-table(Condition = data.ontopic$treatment)
+```{r valid-sample}
+data.valid <- data.complete %>% filter(valid_final %in% TRUE)
 
-s_h2  <- compare_groups("manipCheck", data.ontopic)
-s_h1  <- compare_groups("intention",  data.ontopic)
-s_h13 <- compare_groups("intention3", data.ontopic)
-s_h3a <- compare_groups("selfperc",   data.ontopic)
+exclusion_tab <- data.complete %>%
+  mutate(Status = case_when(valid_final %in% TRUE  ~ "valid (retained)",
+                            valid_final %in% FALSE ~ "invalid (excluded)",
+                            TRUE                   ~ "no final code (excluded)")) %>%
+  count(Condition = condition, Status) %>%
+  group_by(Condition) %>%
+  mutate(Percent = pct(n / sum(n), 1)) %>%
+  ungroup()
+kable(exclusion_tab, caption = "Participants retained and excluded, by condition")
 
-data.frame(
-  Test = c("H2: manipulation check", "H1: intention (6 items)",
-           "H1: intention (3 items)", "Self-perception"),
-  Result = c(s_h2$text, s_h1$text, s_h13$text, s_h3a$text)
-)
+n_valid    <- nrow(data.valid)
+n_excluded <- nrow(data.complete) - n_valid
+```
 
+```{r valid-tests}
+v_h2  <- compare_groups("manipCheck", data.valid)
+v_h1  <- compare_groups("intention",  data.valid)
+v_h16 <- compare_groups("intention6", data.valid)
+v_h3a <- compare_groups("selfperc",   data.valid)
+
+kable(rbind(result_row("H2: manipulation check",  v_h2),
+            result_row("H1: intention (3 items)", v_h1),
+            result_row("H1: intention (6 items)", v_h16),
+            result_row("Self-perception",          v_h3a)),
+      caption = sprintf("Group comparisons after excluding invalid texts (N = %d)", n_valid))
+```
+
+```{r valid-mediation, cache = TRUE}
 set.seed(params$seed)
-s_med <- mediation::mediate(lm(selfperc ~ treatment, data = data.ontopic),
-                            lm(intention ~ treatment + selfperc, data = data.ontopic),
+v_model_m <- lm(selfperc ~ treatment, data = data.valid)
+v_model_y <- lm(intention ~ treatment + selfperc, data = data.valid)
+v_med <- mediation::mediate(v_model_m, v_model_y,
                             treat = "treatment", mediator = "selfperc",
                             boot = TRUE, boot.ci.type = "perc",
                             sims = params$n_boot)
-summary(s_med)
+summary(v_med)
 ```
 
+```{r valid-mediation-table}
+kable(med_summary(v_med), digits = 3,
+      col.names = c("Effect", "Estimate", "95% CI lower", "95% CI upper", "p"),
+      caption = "Mediation by self-perception after excluding invalid texts, intention (3 items) as outcome")
+```
+
+After excluding `r n_excluded` participants with invalid or missing text codes (*N* = `r n_valid`), the manipulation check showed `r ifelse(v_h2$ok, "a significant", "no significant")` difference in the predicted direction, `r v_h2$text`, and intention (three items) `r ifelse(v_h1$ok, "differed significantly in the predicted direction", "did not differ significantly in the predicted direction")`, `r v_h1$text`. In this subsample, the replication would thus be **`r ifelse(v_h1$ok & v_h2$ok, "successful", "not successful")`**. The indirect effect through self-perception was *b* = `r fmt(v_med$d.avg, 3)`, 95% CI [`r fmt(v_med$d.avg.ci[1], 3)`, `r fmt(v_med$d.avg.ci[2], 3)`] (H3 `r supported(med_ok(v_med))`).
+
 # Exploratory analyses (not preregistered)
+
+## Content of the manipulation texts
+
+Frequencies of the final codes, separately for each condition. Percentages are computed within condition (coded participants only).
+
+```{r code-frequencies}
+data.coded <- data.complete %>% filter(coded)
+
+freq_tab <- data.coded %>%
+  mutate(Code = ifelse(is.na(final_code_en), "(no final code)", final_code_en)) %>%
+  count(condition, Code) %>%
+  group_by(condition) %>%
+  mutate(pct = 100 * n / sum(n)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = condition, values_from = c(n, pct), values_fill = 0) %>%
+  dplyr::select(Code, n_control, pct_control, n_experimental, pct_experimental) %>%
+  arrange(Code)
+
+freq_tab <- bind_rows(freq_tab,
+                      summarise(freq_tab, Code = "Total", across(where(is.numeric), sum)))
+
+kable(freq_tab, digits = 1,
+      col.names = c("Final code", "Control n", "Control %", "Experimental n", "Experimental %"),
+      caption = "Frequencies of final text codes by condition")
+
+# Codes without a final code: both coders left the text uncoded, or the disagreement was not resolved
+table(Condition = data.coded$condition,
+      Unresolved = data.coded$unresolved, useNA = "ifany")
+
+# Flags created when processing the codes (shown if present in text_codes.RDS)
+if ("single_coder" %in% names(data.coded)) {
+  print(table(Condition = data.coded$condition, `Coded by one coder only` = data.coded$single_coder))
+}
+if ("wrong_condition" %in% names(data.coded)) {
+  print(table(Condition = data.coded$condition, `Content of the other condition` = data.coded$wrong_condition))
+}
+```
+
+## Inter-rater reliability (coder 1 vs. coder 2)
+
+Agreement between the two independent coders is reported for (a) the refined content categories and (b) the binary classification of texts as valid vs. invalid for the participant's condition, separately for each condition and overall. Agreement is computed on texts that both coders coded; texts coded by only one coder are counted in a separate column (under the coding protocol, these count as disagreements resolved by coder 3). Confidence intervals for Cohen's κ are percentile bootstrap intervals (`r params$n_boot_kappa` resamples). Note that κ can be low despite high percentage agreement when one category is very frequent (e.g., almost all texts valid), so both indices should be interpreted together.
+
+```{r interrater}
+kappa_cohen <- function(a, b) {
+  lev <- sort(union(a, b))
+  tab <- table(factor(a, levels = lev), factor(b, levels = lev))
+  n   <- sum(tab)
+  po  <- sum(diag(tab)) / n
+  pe  <- sum(rowSums(tab) * colSums(tab)) / n^2
+  (po - pe) / (1 - pe)
+}
+
+irr_summary <- function(a, b, n_boot = params$n_boot_kappa) {
+  a <- as.character(a); b <- as.character(b)
+  one_missing <- sum(xor(is.na(a), is.na(b)))
+  both <- !is.na(a) & !is.na(b)
+  a <- a[both]; b <- b[both]
+  boot <- replicate(n_boot, {
+    i <- sample.int(length(a), replace = TRUE)
+    kappa_cohen(a[i], b[i])
+  })
+  ci <- unname(quantile(boot, c(.025, .975), na.rm = TRUE))
+  data.frame(`n (both coded)` = length(a), `n (one coder only)` = one_missing,
+             `Agreement %` = 100 * mean(a == b),
+             kappa = kappa_cohen(a, b), `95% CI lower` = ci[1], `95% CI upper` = ci[2],
+             check.names = FALSE)
+}
+
+set.seed(params$seed)
+irr_table <- bind_rows(lapply(c("control", "experimental", "overall"), function(cond) {
+  d <- if (cond == "overall") data.coded else filter(data.coded, condition == cond)
+  bind_rows(
+    data.frame(Condition = cond, Coding = "Refined categories",
+               irr_summary(d$coder1_en, d$coder2_en), check.names = FALSE),
+    data.frame(Condition = cond, Coding = "Valid vs. invalid",
+               irr_summary(d$valid_c1, d$valid_c2), check.names = FALSE)
+  )
+}))
+
+kable(irr_table, digits = c(0, 0, 0, 0, 1, 2, 2, 2),
+      caption = "Inter-rater reliability of the text coding (coder 1 vs. coder 2)")
+```
 
 ## Small-telescopes test (Simonsohn, 2015)
 
@@ -517,30 +755,31 @@ The preregistration justifies the sample size partly by Simonsohn's (2015) small
 ```{r small-telescopes}
 d33 <- pwr::pwr.t2n.test(n1 = 70, n2 = 71, sig.level = .05, power = 1/3)$d
 
-d90_6 <- compare_groups("intention",  data.complete, conf.level = .90)$d
-d90_3 <- compare_groups("intention3", data.complete, conf.level = .90)$d
+d90_3 <- compare_groups("intention",  data.complete, conf.level = .90)$d
+d90_6 <- compare_groups("intention6", data.complete, conf.level = .90)$d
 
 data.frame(
-  Scale     = c("Intention (6 items)", "Intention (3 items)"),
-  d         = round(c(d90_6$estimate, d90_3$estimate), 3),
-  CI90_low  = round(c(d90_6$conf.int[1], d90_3$conf.int[1]), 3),
-  CI90_high = round(c(d90_6$conf.int[2], d90_3$conf.int[2]), 3),
+  Scale     = c("Intention (3 items; primary)", "Intention (6 items)"),
+  d         = round(c(d90_3$estimate, d90_6$estimate), 3),
+  CI90_low  = round(c(d90_3$conf.int[1], d90_6$conf.int[1]), 3),
+  CI90_high = round(c(d90_3$conf.int[2], d90_6$conf.int[2]), 3),
   d33       = round(d33, 3),
-  Smaller_than_d33 = c(d90_6$conf.int[2] < d33, d90_3$conf.int[2] < d33)
+  Smaller_than_d33 = c(d90_3$conf.int[2] < d33, d90_6$conf.int[2] < d33)
 )
 ```
 
-For the six-item scale, the upper bound of the 90% CI of the replication effect (`r fmt(d90_6$conf.int[2])`) was `r ifelse(d90_6$conf.int[2] < d33, "below", "not below")` *d*~33%~ = `r fmt(d33)`.
+For the three-item scale, the upper bound of the 90% CI of the replication effect (`r fmt(d90_3$conf.int[2])`) was `r ifelse(d90_3$conf.int[2] < d33, "below", "not below")` *d*~33%~ = `r fmt(d33)`.
 
 # Supplementary tables
 
 ## Table A1: Means, standard deviations, and correlations
 
 ```{r table-a1}
-var_names <- c("treatment" = "Treatment",
+var_names <- c("treatment"  = "Treatment",
                "manipCheck" = "Manipulation check",
-               "intention" = "Intention",
-               "selfperc" = "Self-perception")
+               "intention"  = "Intention (3 items)",
+               "intention6" = "Intention (6 items)",
+               "selfperc"   = "Self-perception")
 
 df_summary <- data.complete[, names(var_names), drop = FALSE] %>%
   mutate(across(everything(), as.numeric))
@@ -557,7 +796,7 @@ star_label <- function(p) {
 format_r <- function(r) {
   r_rounded <- round(r, 2)
   if (abs(r_rounded) < .01) r_rounded <- 0
-  sub("^0", "", sprintf("%.2f", r_rounded))
+  sub("^(-?)0", "\\1", sprintf("%.2f", r_rounded))
 }
 
 k <- length(var_names)
@@ -583,11 +822,39 @@ table_a1 <- data.frame(
 
 names(table_a1) <- c("Variable", "M", "SD", names(var_names))
 
-kable(table_a1, align = "lrrcccc",
+kable(table_a1, align = paste0("lrr", strrep("c", k)),
       caption = sprintf("Table A1. Means, standard deviations, and correlations (N = %d)", nrow(df_summary)))
 ```
 
-*Note.* Treatment is a dummy indicator (1 = experimental condition, 0 = control condition). Intention is the six-item scale. \* *p* < .05, \*\* *p* < .01, \*\*\* *p* < .001.
+*Note.* Treatment is a dummy indicator (1 = experimental condition, 0 = control condition). ns = not significant, \* *p* < .05, \*\* *p* < .01, \*\*\* *p* < .001.
+
+## Table A2: Descriptive statistics by condition
+
+```{r table-a2}
+desc_vars <- c(manipCheck = "Manipulation check",
+               intention  = "Intention (3 items)",
+               intention6 = "Intention (6 items)",
+               selfperc   = "Self-perception")
+
+n_ctrl <- sum(data.complete$treatment == 0)
+n_exp  <- sum(data.complete$treatment == 1)
+
+table_a2 <- data.complete %>%
+  dplyr::select(treatment, all_of(names(desc_vars))) %>%
+  pivot_longer(-treatment, names_to = "var") %>%
+  group_by(var, treatment) %>%
+  summarise(cell = sprintf("%.2f (%.2f)", mean(value), sd(value)), .groups = "drop") %>%
+  pivot_wider(names_from = treatment, values_from = cell) %>%
+  mutate(Variable = desc_vars[var]) %>%
+  arrange(match(var, names(desc_vars))) %>%
+  dplyr::select(Variable, `0`, `1`)
+
+kable(table_a2,
+      col.names = c("Variable",
+                    sprintf("Control group (n = %d)", n_ctrl),
+                    sprintf("Experimental group (n = %d)", n_exp)),
+      caption = "Table A2. Descriptive statistics, M (SD), for the control and experimental groups")
+```
 
 # References
 
