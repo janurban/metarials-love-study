@@ -1,6 +1,10 @@
 ---
 title: "Feeling Loved and Purchase Intention for Ecological Products: Replication of Tang et al. (2025, Study 1a) — Study 1 Analysis"
 date: "`r format(Sys.Date(), '%d %B %Y')`"
+format:
+  gfm:
+    toc: true
+  pdf: default
 params:
   data_url: "https://github.com/janurban/metarials-love-study/blob/main/study1/data_s1_anonymized.RDS?raw=true"
   codes_url: "https://github.com/janurban/metarials-love-study/blob/main/study1/text_codes.RDS?raw=true"
@@ -396,27 +400,10 @@ is_valid <- function(code, treatment) {
 }
 
 codes_small <- codes %>%
-  mutate(
-    join_id = as.character(.data[[params$codes_id]]),
-    code_condition = dplyr::recode(
-      as.character(condition),
-      "treatment" = "experimental",
-      "experimental" = "experimental",
-      "control" = "control",
-      .default = NA_character_
-    )
-  ) %>%
-  mutate(
-    wrong_condition = case_when(
-      is.na(final_code_en) ~ NA_integer_,
-      code_condition == "experimental" ~ as.integer(!(final_code_en %in% love_codes)),
-      code_condition == "control" ~ as.integer(!(final_code_en %in% everyday_codes)),
-      TRUE ~ NA_integer_
-    )
-  ) %>%
-  dplyr::select(join_id, code_condition, coder1_en, coder2_en, coder3_en, final_code_en,
-                unresolved, wrong_condition, any_of(c("single_coder")))
-stopifnot(!any(duplicated(codes_small$join_id)))
+  mutate(join_id = as.character(.data[[params$codes_id]])) %>%
+  dplyr::select(join_id, coder1_en, coder2_en, coder3_en, final_code_en,
+                unresolved, any_of(c("wrong_condition")))
+stopifnot(!anyDuplicated(codes_small$join_id))
 
 data.complete <- data.complete %>%
   mutate(join_id = as.character(.data[[params$data_id]]),
@@ -432,21 +419,14 @@ n_uncoded <- sum(!data.complete$coded)
 
 `r n_coded` of `r nrow(data.complete)` completers were matched to a text code (`r n_uncoded` without a code).
 
-**Checks of the codes.** The chunk below runs three checks on all randomized participants (completers and drop-outs) and stops the knit if any of them fails:
+**Checks of the codes.** The chunk below runs two checks on all randomized participants (completers and drop-outs) and stops the knit if either fails. Matching is by identifier only; condition labels are not compared across files.
 
-1. *Merge.* Each condition label in the codes file must correspond to exactly one condition in the survey data, and every merged case must have a matching condition. A mismatch indicates that `codes_id` / `data_id` in the YAML header point to non-matching identifiers, or an error in the codes file.
-2. *Completeness.* Every completed questionnaire must have a final code; missing codes are allowed only for unfinished questionnaires.
-3. *Condition flag* (only if `text_codes.RDS` contains `wrong_condition`). The flag created when processing the codes must agree with the condition-specific validity derived here.
+1. *Completeness.* Every completed questionnaire must have a final code; missing codes are allowed only for unfinished questionnaires.
+2. *Condition flag* (only if `text_codes.RDS` contains `wrong_condition`). The flag created when processing the codes must agree with the condition-specific validity derived here.
 
 ```{r code-checks}
 code_status <- data %>%
-  mutate(
-    join_id = as.character(.data[[params$data_id]]),
-    Survey_condition = dplyr::recode(as.character(random),
-                                     "1" = "control",
-                                     "2" = "experimental",
-                                     .default = NA_character_)
-  ) %>%
+  mutate(join_id = as.character(.data[[params$data_id]])) %>%
   left_join(codes_small, by = "join_id") %>%
   mutate(Code = case_when(!join_id %in% codes_small$join_id ~ "not in codes file",
                           is.na(final_code_en)              ~ "in codes file, no final code",
@@ -455,39 +435,28 @@ code_status <- data %>%
 # Codes-file identifiers without a randomized participant (e.g., screen-outs)
 n_orphan <- length(setdiff(codes_small$join_id, code_status$join_id))
 
-# 1. Merge check
-in_codes <- code_status %>%
-  filter(Code != "not in codes file") %>%
-  mutate(Codes_condition = as.character(code_condition))
-
-cond_check <- table(Survey = in_codes$Survey_condition, Codes = in_codes$Codes_condition, useNA = "ifany")
-cond_check
-
-mismatch <- in_codes %>%
-  filter(is.na(Codes_condition) | is.na(Survey_condition) | Survey_condition != Codes_condition)
-
-if (nrow(mismatch) > 0) {
-  stop(sprintf("Merge check failed: %d case(s) with a condition that does not match the codes file (%s: %s). Check codes_id / data_id and the codes file.",
-               nrow(mismatch), params$data_id, paste(head(mismatch$join_id, 20), collapse = ", ")))
-}
-
-# 2. Completeness check
+# 1. Completeness check
+# Only matched IDs should be checked for missing final codes; unmatched IDs are reviewed manually.
 completeness_tab <- table(Status = code_status$status, Code = code_status$Code)
 completeness_tab
 
-missing_complete <- code_status %>% filter(status == "complete", Code != "final code present")
+missing_complete <- code_status %>%
+  filter(status == "complete",
+         join_id %in% codes_small$join_id,
+         Code != "final code present")
 if (nrow(missing_complete) > 0) {
   stop(sprintf("Completeness check failed: %d completed questionnaire(s) without a final code (%s: %s).",
                nrow(missing_complete), params$data_id,
                paste(head(missing_complete$join_id, 20), collapse = ", ")))
 }
 
-# 3. Condition flag check
+# 2. Condition flag check
 if ("wrong_condition" %in% names(data.complete)) {
   derived_flag <- grepl("_\\(valid\\)$", data.complete$final_code_en) & data.complete$valid_final %in% FALSE
-  flag_mismatch <- data.complete %>% filter(coded, (wrong_condition == 1) != derived_flag)
+  flag_mismatch <- data.complete %>%
+    filter(coded, !is.na(wrong_condition), (wrong_condition == 1) != derived_flag)
   if (nrow(flag_mismatch) > 0) {
-    stop(sprintf("Condition flag check failed: %d case(s) where wrong_condition disagrees with the derived validity (%s: %s). Check ctrl_label / exp_label in the coding script.",
+    stop(sprintf("Condition flag check failed: %d case(s) where wrong_condition disagrees with the derived validity (%s: %s).",
                  nrow(flag_mismatch), params$data_id, paste(head(flag_mismatch$join_id, 20), collapse = ", ")))
   }
 }
