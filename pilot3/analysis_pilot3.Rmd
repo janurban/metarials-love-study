@@ -1,0 +1,287 @@
+---
+title: "Pilot Study 3 (Polish replication of Tang et al., 2025): Reproducible Analysis"
+output:
+  github_document:
+    toc: false
+knit: (function(input, encoding) rmarkdown::render(input = input, encoding = encoding, output_format = "github_document", output_dir = dirname(input), output_file = paste0(tools::file_path_sans_ext(basename(input)), ".md")))
+params:
+  data: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/pilot3/data_pilot3_anonymized.sav"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = "##")
+```
+
+This document reproduces every analysis reported in *Pilot Study 3: Validation
+of the Affect Induction*, which is summarised in the manuscript (Study 2, Method:
+"Pilot Study 3, N = 194; d = 0.48, 95% CI [0.19, 0.78]"). It re-runs the original
+SPSS syntax (`Analizy.spv`) in R. Knit this file in RStudio (**Knit** button) or
+with `rmarkdown::render("analysis_pilot3.Rmd")` to regenerate `analysis_pilot3.md`.
+
+**Data source.** By default, the document downloads `pilot3/data_pilot3_anonymized.sav`
+from the GitHub repository
+[janurban/metarials-love-study](https://github.com/janurban/metarials-love-study).
+It can also read a local `.sav` file by passing a path with
+`rmarkdown::render("analysis_pilot3.Rmd", params = list(data = "path/to/file.sav"))`.
+
+**Required packages.** `haven`, `dplyr`, `knitr`. Install them with
+`install.packages(c("haven", "dplyr", "knitr", "rmarkdown"))`.
+
+# 0. Setup
+
+```{r packages}
+library(haven)   # read the SPSS .sav file
+library(dplyr)   # data handling
+library(knitr)   # tables
+```
+
+Helper functions. Group comparisons follow the SPSS command
+`T-TEST GROUPS=Condition(2 1) /ES DISPLAY(TRUE) /HOMOGENEITY DISPLAY(TRUE)`:
+
+* Differences are love minus neutral.
+* Levene's test is based on the mean, as in SPSS.
+* The report uses the Student *t* test when Levene's *p* ≥ .05 and the Welch *t*
+  test when Levene's *p* < .05.
+* Cohen's *d* always uses the pooled *SD*. Its 95% CI comes from the noncentral
+  *t* distribution of the pooled-variance *t*, which is what SPSS prints in the
+  "Independent Samples Effect Sizes" table.
+
+```{r helpers}
+# number formatting
+fmt  <- function(x, d = 2) formatC(x, format = "f", digits = d)
+no0  <- function(x, d = 3) sub("^(-?)0\\.", "\\1.", fmt(x, d))   # APA style: drop leading zero
+fmtp <- function(p) ifelse(p < .001, "< .001", paste("=", no0(p, 3)))
+pct  <- function(n, N) fmt(100 * n / N, 1)
+
+# Levene's test based on the mean (SPSS default)
+levene_mean <- function(y, g) {
+  z <- abs(y - ave(y, g))
+  a <- anova(lm(z ~ factor(g)))
+  c(F = a$`F value`[1], df1 = a$Df[1], df2 = a$Df[2], p = a$`Pr(>F)`[1])
+}
+
+# 95% CI for Cohen's d (two independent groups) via the noncentral t distribution
+d_ci_2 <- function(t, df, n1, n2, level = .95) {
+  a  <- (1 - level) / 2
+  lo <- uniroot(function(ncp) pt(t, df, ncp, lower.tail = FALSE) - a, c(t - 10, t + 10))$root
+  hi <- uniroot(function(ncp) pt(t, df, ncp) - a, c(t - 10, t + 10))$root
+  c(lo, hi) / sqrt(n1 * n2 / (n1 + n2))
+}
+
+# Love vs. neutral comparison for one variable
+compare_groups <- function(y, cond) {
+  x1 <- y[cond == "Love"];    x1 <- x1[!is.na(x1)]
+  x2 <- y[cond == "Neutral"]; x2 <- x2[!is.na(x2)]
+  n1 <- length(x1); n2 <- length(x2)
+  lev     <- levene_mean(c(x1, x2), rep(1:2, c(n1, n2)))
+  student <- t.test(x1, x2, var.equal = TRUE)
+  welch   <- t.test(x1, x2, var.equal = FALSE)
+  use     <- if (lev["p"] < .05) welch else student
+  sd_pooled <- sqrt(((n1 - 1) * var(x1) + (n2 - 1) * var(x2)) / (n1 + n2 - 2))
+  d  <- (mean(x1) - mean(x2)) / sd_pooled
+  ci <- d_ci_2(unname(student$statistic), n1 + n2 - 2, n1, n2)
+  data.frame(
+    M_love = mean(x1), SD_love = sd(x1), n_love = n1,
+    M_neutral = mean(x2), SD_neutral = sd(x2), n_neutral = n2,
+    levene_F = unname(lev["F"]), levene_p = unname(lev["p"]),
+    test = if (lev["p"] < .05) "Welch" else "Student",
+    t = unname(use$statistic), df = unname(use$parameter), p = use$p.value,
+    d = d, d_low = ci[1], d_high = ci[2])
+}
+```
+
+# 1. Data
+
+```{r data}
+data_source <- params$data
+if (grepl("^https?://", data_source, ignore.case = TRUE)) {
+  # A github.com/.../blob/... link points to the web page, not the file:
+  # rewrite it to the raw-file address
+  data_source <- sub("^https?://github\\.com/([^/]+)/([^/]+)/blob/",
+                     "https://raw.githubusercontent.com/\\1/\\2/", data_source)
+  data_file <- tempfile(fileext = ".sav")
+  download_status <- download.file(data_source, data_file, mode = "wb", quiet = TRUE)
+  if (download_status != 0 || !file.exists(data_file) || file.size(data_file) == 0) {
+    stop("Could not download the data file from ", data_source)
+  }
+  # A valid SPSS system file starts with "$FL2" (or "$FL3" if compressed with zlib)
+  if (!readChar(data_file, 4, useBytes = TRUE) %in% c("$FL2", "$FL3")) {
+    stop("The file downloaded from ", data_source, " is not an SPSS .sav file. ",
+         "Check that the URL points to the raw file and that the repository is public.")
+  }
+} else {
+  data_file <- data_source
+}
+
+dat_raw <- read_sav(data_file)
+dim(dat_raw)
+```
+
+Variables are recoded to English labels. `Education` is stored as LimeSurvey answer
+codes: `AO01` = primary, `AO02` = secondary without high school diploma
+(*matura*), `AO03` = secondary with diploma, `AO05` = higher, and `-oth` =
+"Other". Participants who chose "Other" typed in their field of study
+(`Education_open`), so the report counts them as current students.
+
+```{r recode}
+dat_all <- dat_raw %>%
+  zap_labels() %>%
+  mutate(
+    Condition_f = factor(Condition, levels = c(2, 1), labels = c("Love", "Neutral")),
+    Gender_f    = factor(Sex, levels = 1:4,
+                         labels = c("Female", "Male", "Non-binary or gender-diverse",
+                                    "Prefer not to say")),
+    Education_f = factor(trimws(Education),
+                         levels = c("AO01", "AO02", "AO03", "AO05", "-oth"),
+                         labels = c("Primary", "Secondary without high school diploma",
+                                    "Secondary with high school diploma", "Higher",
+                                    "Other (currently studying)")),
+    Text = NA_character_,
+    Text_chars = NA_integer_)
+```
+
+## 1.1 Exclusions
+
+Participants whose native language was not Polish were excluded
+(`Excluded = 1`; SPSS: `FILTER BY filter_$` with `Excluded = 2`). The
+`Excluded` flag is identical to `Language1 = 2`.
+
+```{r exclusion}
+all(xor(dat_all$Excluded == 1, dat_all$Language1 == 1))   # flag matches language
+
+dat_all %>%
+  filter(Excluded == 1) %>%
+  count(`Native language` = trimws(Language_other), name = "n") %>%
+  kable()
+
+dat <- dat_all %>% filter(Excluded == 2)
+N <- nrow(dat)
+c(before = nrow(dat_all), excluded = sum(dat_all$Excluded == 1), analysed = N)
+```
+
+# 2. Participants
+
+```{r participants}
+tab_freq <- function(f) {
+  n <- table(f)
+  data.frame(Category = names(n), n = as.vector(n), Percent = pct(as.vector(n), N))
+}
+age <- c(M = mean(dat$Age), Mdn = median(dat$Age), SD = sd(dat$Age),
+         Min = min(dat$Age), Max = max(dat$Age))
+fmt(age)
+```
+
+**Gender**
+
+```{r gender}
+kable(tab_freq(dat$Gender_f))
+```
+
+**Highest completed education**
+
+```{r education}
+kable(tab_freq(dat$Education_f))
+```
+
+**Condition** (random assignment)
+
+```{r condition}
+kable(tab_freq(dat$Condition_f))
+```
+
+# 3. Completion and writing times
+
+`Survey_time` (whole study) and `Writing_time` (time on the writing-task page,
+including the 30-s minimum) are stored in seconds.
+
+```{r times}
+time_row <- function(x, label) data.frame(
+  Variable = label,
+  `M (s)` = fmt(mean(x)), `Mdn (s)` = fmt(median(x)), `SD (s)` = fmt(sd(x)),
+  `M (min)` = fmt(mean(x) / 60), `Mdn (min)` = fmt(median(x) / 60),
+  `SD (min)` = fmt(sd(x) / 60),
+  check.names = FALSE)
+kable(rbind(
+  time_row(dat$Survey_time, "Whole study"),
+  time_row(dat$Writing_time, "Writing page, all"),
+  time_row(dat$Writing_time[dat$Condition_f == "Love"], "Writing page, love"),
+  time_row(dat$Writing_time[dat$Condition_f == "Neutral"], "Writing page, neutral"),
+  time_row(dat$Writing_time - 30, "Writing page beyond the 30-s minimum, all")))
+```
+
+Length of the written texts was not reported in the anonymized data file.
+The original text fields are omitted, so character counts are not available.
+
+```{r text-length}
+data.frame(
+  Condition = c("Love", "Neutral"),
+  `Character counts` = c("Not available", "Not available"),
+  check.names = FALSE
+) %>% kable()
+```
+
+# 4. Manipulation check
+
+"Right now, I feel loved" (1 = strongly disagree, 7 = strongly agree).
+
+```{r manipulation}
+mc <- compare_groups(dat$ManipCheck, dat$Condition_f)
+```
+
+```{r manipulation-table}
+res_table <- function(res, labels) data.frame(
+  Measure = labels,
+  `Love M (SD)`    = paste0(fmt(res$M_love), " (", fmt(res$SD_love), ")"),
+  `Neutral M (SD)` = paste0(fmt(res$M_neutral), " (", fmt(res$SD_neutral), ")"),
+  `Levene F (p)`   = paste0(fmt(res$levene_F), " (", no0(res$levene_p), ")"),
+  Test = res$test,
+  t = fmt(res$t), df = ifelse(res$test == "Welch", fmt(res$df, 1), fmt(res$df, 0)),
+  p = fmtp(res$p), d = fmt(res$d),
+  `95% CI d` = paste0("[", fmt(res$d_low), ", ", fmt(res$d_high), "]"),
+  check.names = FALSE)
+kable(res_table(mc, "Feeling loved"))
+c(n_love = mc$n_love, n_neutral = mc$n_neutral)
+```
+
+# 5. Evaluation of the writing task
+
+```{r task-evaluation}
+task_vars <- c(Task_comprehension = "Instructions comprehensible",
+               Task_easy          = "Task easy",
+               Task_effort        = "Task effortful",
+               Task_engagement    = "Task engaging",
+               Task_time          = "30-s minimum appropriate")
+task_res <- do.call(rbind, lapply(names(task_vars),
+                                  function(v) compare_groups(dat[[v]], dat$Condition_f)))
+kable(res_table(task_res, unname(task_vars)))
+```
+
+The report also compares the condition means with the scale midpoint (4)
+descriptively. For ease, both means are above 4; for effort, both are below 4.
+
+# 6. Comparison with the report
+
+All statistics in the Pilot Study 3 report match the SPSS output (`Analizy.spv`)
+and the analyses above, apart from these points:
+
+1. **Manipulation check, *p* value.** The report gives *p* < .001. The two-tailed
+   *p* is .001 (*p* = .00115). The one-tailed *p* is .0006.
+2. **Manipulation check, *SD* in the love condition.** The report gives 1.46.
+   The value is 1.47 (1.4653).
+3. **Engagement, 95% CI for *d*.** The report gives [0.21, 0.80]. The upper limit
+   is 0.79 (0.7949).
+4. **Education.** The report gives higher education *n* = 58 (29.9%) and
+   secondary education without the diploma *n* = 6 (3.1%). The data give
+   *n* = 57 (29.4%) and *n* = 7 (3.6%). The other categories match.
+5. **Writing time.** The report says participants wrote for a median of 3.0 min
+   "after the forced-pacing minimum had elapsed". The median of 2.95 min
+   (177 s) is the total time on the writing page, *including* the 30-s minimum.
+   The median time beyond the minimum is about 2.45 min.
+6. **Typo in the summary.** It begins "Pilot Study 2 indicated…"; this should be
+   Pilot Study 3.
+
+# Session information
+
+```{r session}
+sessionInfo()
+```
