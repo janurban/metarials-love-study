@@ -4,7 +4,7 @@ output:
   github_document:
     toc: false
 params:
-  data: "Dataset_pilot_study_2.sav"
+  data: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/Pilot2/Dataset%20pilot%20study%202.sav"
 ---
 
 ```{r setup, include = FALSE}
@@ -18,8 +18,8 @@ and the JASP confirmatory factor analyses in R. Knit this file in RStudio
 (**Knit** button) or with `rmarkdown::render("Pilot_Study_2_analysis.Rmd")`
 to regenerate `Pilot_Study_2_analysis.md`.
 
-**Required files.** Put `Dataset_pilot_study_2.sav` in the same folder as this
-file, or pass another path with
+**Data source.** By default, the document downloads `Dataset pilot study 2.sav`
+from the GitHub repository. It can also read a local `.sav` file by passing a path with
 `rmarkdown::render("Pilot_Study_2_analysis.Rmd", params = list(data = "path/to/file.sav"))`.
 
 **Required packages.** `haven`, `dplyr`, `knitr`, `lavaan`. Install them with
@@ -88,7 +88,19 @@ txt <- list()  # formatted numbers used in the text
 # 1. Data
 
 ```{r data}
-dat_raw <- read_sav(params$data)
+data_source <- params$data
+if (grepl("^https?://", data_source, ignore.case = TRUE)) {
+  data_file <- file.path("/tmp/pa-1000/3c46d255-5e7f-4b1c-b874-463dda2a7013",
+                         "Pilot2_data.sav")
+  download_status <- download.file(data_source, data_file, mode = "wb", quiet = TRUE)
+  if (download_status != 0 || !file.exists(data_file)) {
+    stop("Could not download the data file from ", data_source)
+  }
+} else {
+  data_file <- data_source
+}
+
+dat_raw <- read_sav(data_file)
 dim(dat_raw)
 
 # Labelled categorical variables -> factors; all other variables -> plain numeric/character
