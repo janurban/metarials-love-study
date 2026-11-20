@@ -1,0 +1,427 @@
+---
+title: "Pilot Study 2 (Polish replication of Tang et al., 2025): Reproducible Analysis"
+output:
+  github_document:
+    toc: false
+params:
+  data: "Dataset_pilot_study_2.sav"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = "##")
+```
+
+This document reproduces every analysis reported in *Pilot Study 2: Materials
+and Scale Validation*, which is summarised in the manuscript (Study 2, Method:
+"Pilot Study 2, N = 129"). It re-runs the original SPSS syntax (`Analizy.spv`)
+and the JASP confirmatory factor analyses in R. Knit this file in RStudio
+(**Knit** button) or with `rmarkdown::render("Pilot_Study_2_analysis.Rmd")`
+to regenerate `Pilot_Study_2_analysis.md`.
+
+**Required files.** Put `Dataset_pilot_study_2.sav` in the same folder as this
+file, or pass another path with
+`rmarkdown::render("Pilot_Study_2_analysis.Rmd", params = list(data = "path/to/file.sav"))`.
+
+**Required packages.** `haven`, `dplyr`, `knitr`, `lavaan`. Install them with
+`install.packages(c("haven", "dplyr", "knitr", "lavaan", "rmarkdown"))`.
+
+# 0. Setup
+
+```{r packages}
+library(haven)   # read the SPSS .sav file
+library(dplyr)   # data handling
+library(knitr)   # tables
+library(lavaan)  # CFA and McDonald's omega
+```
+
+Helper functions. Standardised mean differences are Cohen's *d* (one-sample:
+(*M* – 4) / *SD*; paired: *d<sub>z</sub>* = *M*<sub>diff</sub> / *SD*<sub>diff</sub>),
+with 95% CIs from the noncentral *t* distribution. These are the same values
+SPSS prints with `/ES DISPLAY(TRUE)`.
+
+```{r helpers}
+# number formatting
+fmt  <- function(x, d = 2) formatC(x, format = "f", digits = d)
+no0  <- function(x, d = 3) sub("^(-?)0\\.", "\\1.", fmt(x, d))   # APA style: drop leading zero
+fmtp <- function(p) ifelse(p < .001, "< .001", paste("=", no0(p, 3)))
+pct  <- function(n, N) fmt(100 * n / N, 1)
+
+# 95% CI for Cohen's d via the noncentral t distribution (as in SPSS)
+d_ci <- function(t, df, n, level = .95) {
+  a  <- (1 - level) / 2
+  lo <- uniroot(function(ncp) pt(t, df, ncp, lower.tail = FALSE) - a, c(t - 10, t + 10))$root
+  hi <- uniroot(function(ncp) pt(t, df, ncp) - a, c(t - 10, t + 10))$root
+  c(lo, hi) / sqrt(n)
+}
+
+# One-sample t test against the scale midpoint
+one_sample <- function(x, mu = 4) {
+  x  <- x[!is.na(x)]
+  n  <- length(x)
+  tt <- t.test(x, mu = mu)
+  d  <- (mean(x) - mu) / sd(x)
+  ci <- d_ci(unname(tt$statistic), n - 1, n)
+  data.frame(M = mean(x), SD = sd(x), t = unname(tt$statistic), df = n - 1,
+             p = tt$p.value, d = d, d_low = ci[1], d_high = ci[2])
+}
+
+# Cronbach's alpha
+cronbach_alpha <- function(X) {
+  X <- as.matrix(X); k <- ncol(X)
+  k / (k - 1) * (1 - sum(apply(X, 2, var)) / var(rowSums(X)))
+}
+
+# McDonald's omega from a one-factor ML model:
+# omega = (sum of loadings)^2 / [(sum of loadings)^2 + sum of residual variances].
+# This is the estimator used by SPSS RELIABILITY /MODEL=OMEGA.
+mcdonald_omega <- function(data, items) {
+  fit <- cfa(paste("f =~", paste(items, collapse = " + ")), data = data, std.lv = TRUE)
+  pe  <- parameterEstimates(fit)
+  lam <- pe$est[pe$op == "=~"]
+  th  <- pe$est[pe$op == "~~" & pe$lhs == pe$rhs & pe$lhs %in% items]
+  sum(lam)^2 / (sum(lam)^2 + sum(th))
+}
+
+txt <- list()  # formatted numbers used in the text
+```
+
+# 1. Data
+
+```{r data}
+dat_raw <- read_sav(params$data)
+dim(dat_raw)
+
+# Labelled categorical variables -> factors; all other variables -> plain numeric/character
+cat_vars <- c("Eco_products1", "Eco_products2", "Gender", "Language", "Education",
+              paste0("ComprehensionCheck", 1:8))
+dat <- dat_raw %>%
+  mutate(across(all_of(cat_vars), ~ as_factor(.x, levels = "labels"), .names = "{.col}_f")) %>%
+  zap_labels()
+```
+
+The shared data file already contains only the 129 native Polish speakers (the
+four participants with another native language were removed before the file
+was saved), so the exclusion step below changes nothing. It is kept to document
+the criterion.
+
+```{r exclusion}
+dat <- dat %>% filter(Language == 1)
+N <- nrow(dat)
+N
+```
+
+Derived variables in the data file are checked against their definitions:
+
+```{r checks}
+key <- c(2, 1, 2, 2, 2, 1, 1, 1)  # correct answer for checks 1-8 (1 = True, 2 = False)
+score_ok <- sapply(1:8, function(i)
+  all(as.numeric(dat[[paste0("ComprehensionCheck", i)]] == key[i]) ==
+        dat[[paste0("ComprehensionCheck", i, "_score")]]))
+c(item_scores       = all(score_ok),
+  sum_score         = all(rowSums(dat[paste0("ComprehensionCheck", 1:8, "_score")]) ==
+                            dat$Overall_comprehension_score),
+  virtue_index      = isTRUE(all.equal(rowMeans(dat[c("Virtue1", "Virtue2", "Virtue3")]),
+                                       dat$Virtue_index, check.attributes = FALSE)),
+  vice_index        = isTRUE(all.equal(rowMeans(dat[c("Vice1", "Vice2", "Vice3")]),
+                                       dat$Vice_index, check.attributes = FALSE)),
+  intention3_recode = all(8 - dat$Intention3 == dat$Intention3_recoded),
+  no_missing        = !anyNA(select(dat, -Open_ended_question, -Study_discipline)))
+```
+
+# 2. Participants
+
+```{r participants}
+txt$age_m  <- fmt(mean(dat$Age)); txt$age_sd <- fmt(sd(dat$Age))
+txt$age_min <- min(dat$Age);      txt$age_max <- max(dat$Age)
+
+tab_freq <- function(f) {
+  n <- table(f)
+  data.frame(Category = names(n), n = as.vector(n), Percent = pct(as.vector(n), N))
+}
+```
+
+**Gender**
+
+```{r gender}
+kable(tab_freq(dat$Gender_f))
+```
+
+**Highest completed education**
+
+```{r education}
+kable(tab_freq(dat$Education_f))
+```
+
+Age: *M* = `r txt$age_m`, *SD* = `r txt$age_sd`, range `r txt$age_min`–`r txt$age_max`.
+
+Field of study among participants currently studying (incomplete higher education):
+
+```{r students}
+students <- dat %>% filter(Education == 4)
+disc <- trimws(students$Study_discipline)
+disc[disc == ""] <- "(not reported)"
+disc_tab <- as.data.frame(table(disc), responseName = "n", stringsAsFactors = FALSE)
+disc_tab <- disc_tab[order(-disc_tab$n, disc_tab$disc, method = "radix"), ]
+rownames(disc_tab) <- NULL
+kable(disc_tab, col.names = c("Field of study", "n"))
+txt$n_students <- nrow(students)
+txt$n_psych    <- sum(disc == "Psychologia")
+txt$pct_psych  <- pct(sum(disc == "Psychologia"), nrow(students))
+```
+
+`r txt$n_psych` of `r txt$n_students` students (`r txt$pct_psych`%) studied psychology.
+
+# 3. Completion times
+
+`Time_overall` and `Time_vignette` are stored in seconds.
+
+```{r times}
+mmss <- function(s) sprintf("%d:%02d", floor(s / 60), round(s %% 60))
+times <- data.frame(
+  Variable = c("Whole survey", "Vignette viewing"),
+  M_s   = c(mean(dat$Time_overall),   mean(dat$Time_vignette)),
+  Mdn_s = c(median(dat$Time_overall), median(dat$Time_vignette)),
+  SD_s  = c(sd(dat$Time_overall),     sd(dat$Time_vignette)))
+times_out <- times %>% mutate(
+  `M (s)` = fmt(M_s), `Mdn (s)` = fmt(Mdn_s), `SD (s)` = fmt(SD_s),
+  `M (min)` = fmt(M_s / 60), `Mdn (min)` = fmt(Mdn_s / 60), `SD (min)` = fmt(SD_s / 60),
+  `M (min:s)` = mmss(M_s), `Mdn (min:s)` = mmss(Mdn_s), `SD (min:s)` = mmss(SD_s)) %>%
+  select(-M_s, -Mdn_s, -SD_s)
+kable(times_out)
+```
+
+# 4. Familiarity with ecological products
+
+**"Have you ever seen ecological products marked with the previously shown green-leaf logo in a store?"**
+
+```{r familiarity-seen}
+kable(tab_freq(dat$Eco_products1_f))
+```
+
+**"Have you ever purchased ecological products?"**
+
+```{r familiarity-bought}
+kable(tab_freq(dat$Eco_products2_f))
+```
+
+# 5. Comprehension check (Table 1)
+
+```{r comprehension}
+cc <- dat$Overall_comprehension_score
+txt$cc_m <- fmt(mean(cc)); txt$cc_sd <- fmt(sd(cc))
+txt$cc_pct <- pct(mean(cc), 8)
+txt$cc_all <- sum(cc == 8); txt$cc_all_pct <- pct(sum(cc == 8), N)
+```
+
+Distribution of the comprehension sum score (0–8):
+
+```{r comprehension-dist}
+kable(as.data.frame(table(Score = cc), responseName = "n"))
+```
+
+**Table 1.** Comprehension (true/false) check: response accuracy (*N* = 129).
+
+```{r table1}
+items_cc <- c(
+  "The production of ecological products involves the intensive use of pesticides and artificial fertilisers in order to ensure high yields. (False)",
+  "Ecological products must meet defined technical standards and undergo comprehensive quality control. (True)",
+  "Ecological products differ from conventional foods only in price and packaging appearance. (False)",
+  "The use of the ecological product logo is not regulated by any regulations. (False)",
+  "Ecological products may compromise safety standards in favour of environmental benefits. (False)",
+  "The ecological product logo is also meant to remind people of the importance of protecting the environment and preventing pollution. (True)",
+  "The logo of ecological products is intended to strengthen harmony between people and the natural world. (True)",
+  "Ecological products are produced in excellent conditions with minimal use of chemical substances. (True)")
+
+table1 <- data.frame(Item = paste0(1:8, ". ", items_cc))
+correct <- sapply(1:8, function(i) sum(dat[[paste0("ComprehensionCheck", i, "_score")]]))
+table1$`Correct, n (%)`   <- paste0(correct, " (", pct(correct, N), "%)")
+table1$`Incorrect, n (%)` <- paste0(N - correct, " (", pct(N - correct, N), "%)")
+kable(table1)
+```
+
+Comprehension score: *M* = `r txt$cc_m` of 8, *SD* = `r txt$cc_sd`
+(`r txt$cc_pct`% correct); `r txt$cc_all` participants (`r txt$cc_all_pct`%)
+answered all eight items correctly.
+
+# 6. Perceived comprehensibility and credibility of the vignette
+
+One-sample *t* tests against the scale midpoint (4). SPSS: `T-TEST /TESTVAL=4 /VARIABLES=Vignette_Comprehension Vignette_Credibility`.
+
+```{r vignette}
+ost <- rbind(one_sample(dat$Vignette_Comprehension),
+             one_sample(dat$Vignette_Credibility))
+ost_out <- data.frame(
+  Rating = c("Comprehensibility", "Credibility"),
+  M = fmt(ost$M), SD = fmt(ost$SD), t = fmt(ost$t), df = ost$df, p = fmtp(ost$p),
+  d = fmt(ost$d), `95% CI d` = paste0("[", fmt(ost$d_low), ", ", fmt(ost$d_high), "]"),
+  check.names = FALSE)
+kable(ost_out)
+```
+
+# 7. Ecological products as virtue vs. vice foods
+
+## 7.1 Reliability of the virtue and vice indices
+
+```{r virtue-vice-reliability}
+virtue_items <- c("Virtue1", "Virtue2", "Virtue3")
+vice_items   <- c("Vice1", "Vice2", "Vice3")
+rel_vv <- data.frame(
+  Index = c("Virtue (health)", "Vice (hedonic)"),
+  alpha = no0(c(cronbach_alpha(dat[virtue_items]), cronbach_alpha(dat[vice_items]))),
+  omega = no0(c(mcdonald_omega(dat, virtue_items), mcdonald_omega(dat, vice_items))))
+kable(rel_vv, col.names = c("Index", "Cronbach's alpha", "McDonald's omega"))
+```
+
+## 7.2 Virtue vs. vice: paired *t* test
+
+SPSS: `T-TEST PAIRS=Virtue_index WITH Vice_index (PAIRED)`.
+
+```{r paired}
+pt_vv <- t.test(dat$Virtue_index, dat$Vice_index, paired = TRUE)
+diff  <- dat$Virtue_index - dat$Vice_index
+dz    <- mean(diff) / sd(diff)
+dz_ci <- d_ci(unname(pt_vv$statistic), N - 1, N)
+paired_out <- data.frame(
+  `Virtue M (SD)` = paste0(fmt(mean(dat$Virtue_index)), " (", fmt(sd(dat$Virtue_index)), ")"),
+  `Vice M (SD)`   = paste0(fmt(mean(dat$Vice_index)), " (", fmt(sd(dat$Vice_index)), ")"),
+  r = no0(cor(dat$Virtue_index, dat$Vice_index)),
+  `M diff [95% CI]` = paste0(fmt(mean(diff)), " [", fmt(pt_vv$conf.int[1]), ", ",
+                             fmt(pt_vv$conf.int[2]), "]"),
+  t = fmt(pt_vv$statistic), df = N - 1, p = fmtp(pt_vv$p.value),
+  d_z = fmt(dz), `95% CI d_z` = paste0("[", fmt(dz_ci[1]), ", ", fmt(dz_ci[2]), "]"),
+  check.names = FALSE)
+kable(paired_out)
+```
+
+## 7.3 Healthier than conventional products
+
+One-sample *t* test against the midpoint (4).
+
+```{r healthiness}
+hc <- one_sample(dat$Healthiness_comparative)
+hc_out <- data.frame(M = fmt(hc$M), SD = fmt(hc$SD), t = fmt(hc$t), df = hc$df, p = fmtp(hc$p),
+                     d = fmt(hc$d), `95% CI d` = paste0("[", fmt(hc$d_low), ", ", fmt(hc$d_high), "]"),
+                     check.names = FALSE)
+kable(hc_out)
+```
+
+# 8. Purchase intention scale
+
+Item 3 ("I am not willing to buy ecological products") is reverse-scored
+(`Intention3_recoded` = 8 – `Intention3`).
+
+```{r pi-items}
+pi_items <- c("Intention1", "Intention2", "Intention3_recoded", paste0("Intention", 4:10))
+pi_text <- c(
+  "1. I am willing to spend more on ecological products because they are worth the extra cost.",
+  "2. During my next shopping trip I plan to buy food marked with the ecological product logo.",
+  "3. I am not willing to buy ecological products. (reversed)",
+  "4. I intend to buy ecological products in the future.",
+  "5. I always willingly buy more ecological products for my family's needs.",
+  "6. I always try to seek out ecological products, even if it requires travelling out of town.",
+  "7. If I had to do it again, I would buy ecological products.",
+  "8. I make an effort to buy ecological products.",
+  "9. I plan to buy ecological products.",
+  "10. I intend to buy ecological products.")
+pi_source <- c(rep("Tang et al. (2025, Exp. 1a); White & Peloza (2009)", 3),
+               rep("Kumar et al. (2023)", 3),
+               rep("Tang et al. (2025, Exp. 2 & 3); Lee & Yun (2015); Loebnitz et al. (2022)", 4))
+```
+
+## 8.1 Three-factor CFA (items grouped by source)
+
+Maximum-likelihood estimation, as in JASP 0.19.1 (which uses `lavaan`).
+
+```{r cfa3}
+model3 <- '
+  Tang1a =~ Intention1 + Intention2 + Intention3_recoded
+  Kumar  =~ Intention4 + Intention5 + Intention6
+  Tang23 =~ Intention7 + Intention8 + Intention9 + Intention10
+'
+fit3 <- cfa(model3, data = dat, estimator = "ML", std.lv = TRUE)
+
+# Is the solution admissible?
+lavInspect(fit3, "post.check")
+# Latent correlations: values > 1 make the latent covariance matrix non-positive definite
+cor_lv <- unclass(lavInspect(fit3, "cor.lv"))
+kable(fmt(cor_lv, 3))
+round(eigen(cor_lv)$values, 3)
+```
+
+Two latent correlations exceed 1 and one eigenvalue of the latent covariance
+matrix is negative. The three-factor solution is therefore inadmissible: the
+three groups of items cannot be separated empirically. `lavaan` gives the
+corresponding warning (suppressed here), and JASP reports that the latent
+covariance matrix is not positive definite.
+
+## 8.2 One-factor CFA (Table 2)
+
+Fit of the one-factor model (lavaan's default χ² is based on *N*, as in JASP):
+
+```{r cfa1}
+model1 <- paste("PI =~", paste(pi_items, collapse = " + "))
+fit1 <- cfa(model1, data = dat, estimator = "ML", std.lv = TRUE)
+
+fm <- fitMeasures(fit1, c("chisq", "df", "pvalue", "cfi", "tli", "rmsea",
+                          "rmsea.ci.lower", "rmsea.ci.upper"))
+fm <- setNames(as.numeric(fm), names(fm))  # drop lavaan's print class
+fit_out <- data.frame(
+  `chi2` = fmt(fm["chisq"]), df = fm["df"], p = fmtp(fm["pvalue"]),
+  CFI = no0(fm["cfi"]), TLI = no0(fm["tli"]), RMSEA = no0(fm["rmsea"]),
+  `RMSEA 90% CI` = paste0("[", no0(fm["rmsea.ci.lower"]), ", ", no0(fm["rmsea.ci.upper"]), "]"),
+  check.names = FALSE, row.names = NULL)
+kable(fit_out)
+```
+
+**Table 2.** Standardised factor loadings (λ), explained variance (*R*²) and item descriptives (*N* = 129).
+
+```{r table2}
+std <- standardizedSolution(fit1) %>% filter(op == "=~")
+r2  <- lavInspect(fit1, "r2")[pi_items]
+
+table2 <- data.frame(
+  Source = pi_source, Item = pi_text,
+  lambda = no0(std$est.std), `R2` = no0(r2), p = fmtp(std$pvalue),
+  M  = fmt(sapply(dat[pi_items], mean), 2),
+  SD = fmt(sapply(dat[pi_items], sd), 3),
+  check.names = FALSE, row.names = NULL)
+kable(table2)
+```
+
+## 8.3 Reliability of the 10-item scale
+
+```{r pi-reliability}
+txt$pi_alpha <- no0(cronbach_alpha(dat[pi_items]))
+txt$pi_omega <- no0(mcdonald_omega(dat, pi_items))
+```
+
+Cronbach's α = `r txt$pi_alpha`; McDonald's ω = `r txt$pi_omega`.
+
+# 9. Comparison with the report
+
+All statistics in the Pilot Study 2 report and in the SPSS output (`Analizy.spv`)
+are reproduced, apart from these points:
+
+1. **Completion times (Section 2 of the report).** The report gives
+   *M* = 6.56 min, *Mdn* = 3.59 min, *SD* = 11.19 min for the whole survey. These are
+   min:s values (6:56, 3:59, 11:20) written as decimal minutes. In decimal minutes the
+   values are *M* = 6.94, *Mdn* = 3.98, *SD* = 11.33 (see Section 3 above).
+2. **Education (Section 1.1).** The percentages for "higher education degree" and
+   "incomplete higher education" are swapped. The data show higher education
+   *n* = 23 (17.8%) and incomplete higher education *n* = 55 (42.6%). The latter
+   matches the report's own *n* = 55 for current students.
+3. **Psychology students.** The data contain 39 of 55 students (70.9%) in psychology,
+   plus one student with no field reported. The report gives 40 (72.7%). Please
+   check which figure is correct.
+4. **Variable labels.** The labels of `Virtue_index` and `Vice_index` in the .sav
+   file list α = .871 / ω = .877 and α = .871 / ω = .876. Those values do not
+   match the current data. The data, the SPSS output and the report all give
+   virtue α = .869, ω = .875 and vice α = .873, ω = .879.
+5. **Item 7 wording in Table 2** reads "organic products" in the report and
+   "ecological products" in the data file and questionnaire.
+
+# Session information
+
+```{r session}
+sessionInfo()
+```
