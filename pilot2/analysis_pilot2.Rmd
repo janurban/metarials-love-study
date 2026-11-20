@@ -3,8 +3,9 @@ title: "Pilot Study 2 (Polish replication of Tang et al., 2025): Reproducible An
 output:
   github_document:
     toc: false
+knit: (function(input, encoding) rmarkdown::render(input = input, encoding = encoding, output_format = "github_document", output_dir = dirname(input), output_file = paste0(tools::file_path_sans_ext(basename(input)), ".md")))
 params:
-  data: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/Pilot2/Dataset%20pilot%20study%202.sav"
+  data: "https://raw.githubusercontent.com/janurban/metarials-love-study/main/pilot2/data_pilot2.sav"
 ---
 
 ```{r setup, include = FALSE}
@@ -15,12 +16,14 @@ This document reproduces every analysis reported in *Pilot Study 2: Materials
 and Scale Validation*, which is summarised in the manuscript (Study 2, Method:
 "Pilot Study 2, N = 129"). It re-runs the original SPSS syntax (`Analizy.spv`)
 and the JASP confirmatory factor analyses in R. Knit this file in RStudio
-(**Knit** button) or with `rmarkdown::render("Pilot_Study_2_analysis.Rmd")`
-to regenerate `Pilot_Study_2_analysis.md`.
+(**Knit** button) or with `rmarkdown::render("analysis_pilot2.Rmd")`
+to regenerate `analysis_pilot2.md`.
 
-**Data source.** By default, the document downloads `Dataset pilot study 2.sav`
-from the GitHub repository. It can also read a local `.sav` file by passing a path with
-`rmarkdown::render("Pilot_Study_2_analysis.Rmd", params = list(data = "path/to/file.sav"))`.
+**Data source.** By default, the document downloads `pilot2/data_pilot2.sav`
+from the GitHub repository
+[janurban/metarials-love-study](https://github.com/janurban/metarials-love-study).
+It can also read a local `.sav` file by passing a path with
+`rmarkdown::render("analysis_pilot2.Rmd", params = list(data = "path/to/file.sav"))`.
 
 **Required packages.** `haven`, `dplyr`, `knitr`, `lavaan`. Install them with
 `install.packages(c("haven", "dplyr", "knitr", "lavaan", "rmarkdown"))`.
@@ -90,11 +93,19 @@ txt <- list()  # formatted numbers used in the text
 ```{r data}
 data_source <- params$data
 if (grepl("^https?://", data_source, ignore.case = TRUE)) {
-  data_file <- file.path("/tmp/pa-1000/3c46d255-5e7f-4b1c-b874-463dda2a7013",
-                         "Pilot2_data.sav")
+  # A github.com/.../blob/... link points to the web page, not the file:
+  # rewrite it to the raw-file address
+  data_source <- sub("^https?://github\\.com/([^/]+)/([^/]+)/blob/",
+                     "https://raw.githubusercontent.com/\\1/\\2/", data_source)
+  data_file <- tempfile(fileext = ".sav")
   download_status <- download.file(data_source, data_file, mode = "wb", quiet = TRUE)
-  if (download_status != 0 || !file.exists(data_file)) {
+  if (download_status != 0 || !file.exists(data_file) || file.size(data_file) == 0) {
     stop("Could not download the data file from ", data_source)
+  }
+  # A valid SPSS system file starts with "$FL2" (or "$FL3" if compressed with zlib)
+  if (!readChar(data_file, 4, useBytes = TRUE) %in% c("$FL2", "$FL3")) {
+    stop("The file downloaded from ", data_source, " is not an SPSS .sav file. ",
+         "Check that the URL points to the raw file and that the repository is public.")
   }
 } else {
   data_file <- data_source
@@ -107,7 +118,11 @@ dim(dat_raw)
 cat_vars <- c("Eco_products1", "Eco_products2", "Gender", "Language", "Education",
               paste0("ComprehensionCheck", 1:8))
 dat <- dat_raw %>%
-  mutate(across(all_of(cat_vars), ~ as_factor(.x, levels = "labels"), .names = "{.col}_f")) %>%
+  mutate(
+    across(all_of(cat_vars), ~ as_factor(.x, levels = "labels"), .names = "{.col}_f"),
+    Time_overall = as.numeric(Time_overall),
+    Time_vignette = as.numeric(Time_vignette)
+  ) %>%
   zap_labels()
 ```
 
