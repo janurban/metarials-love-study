@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Pilot Study 1 (Czech pilot, Love replication of Tang et al., 2025): Reproducible Analysis</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="analysis_pilot1_files/libs/clipboard/clipboard.min.js"></script>
+<script src="analysis_pilot1_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="analysis_pilot1_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="analysis_pilot1_files/libs/quarto-html/popper.min.js"></script>
+<script src="analysis_pilot1_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="analysis_pilot1_files/libs/quarto-html/anchor.min.js"></script>
+<link href="analysis_pilot1_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="analysis_pilot1_files/libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="analysis_pilot1_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="analysis_pilot1_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="analysis_pilot1_files/libs/bootstrap/bootstrap-9314f0fc23221b8a21a2247299057d1b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Pilot Study 1 (Czech pilot, Love replication of Tang et al., 2025): Reproducible Analysis</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This document reproduces the analyses in the <em>Report From Pilot Study PS1 (Love Replication)</em>. It follows the original analysis script (<code>Analysis_v3.R</code>). Knit this file in RStudio (<strong>Knit</strong> button) or with <code>rmarkdown::render("analysis_pilot1.Rmd")</code> to regenerate <code>analysis_pilot1.md</code> in the same folder.</p>
+<p><strong>Data source.</strong> By default, the document downloads <code>pilot1/data_pilot1.csv</code> from the GitHub repository <a href="https://github.com/janurban/metarials-love-study">janurban/metarials-love-study</a>. It can also read a local <code>.csv</code> file by passing a path with <code>rmarkdown::render("analysis_pilot1.Rmd", params = list(data = "path/to/file.csv"))</code>.</p>
+<p><strong>Required packages.</strong> <code>dplyr</code>, <code>readr</code>, <code>knitr</code>, <code>psych</code>, <code>GPArotation</code> (<code>psych::omega()</code> needs <code>GPArotation</code>). Install them with <code>install.packages(c("dplyr", "readr", "knitr", "psych", "GPArotation", "rmarkdown"))</code>.</p>
+<section id="setup" class="level1">
+<h1>0. Setup</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)   <span class="co"># data handling</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(readr)   <span class="co"># parse_number()</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(knitr)   <span class="co"># tables</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(psych)   <span class="co"># alpha and omega</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>fmt <span class="ot">&lt;-</span> <span class="cf">function</span>(x, <span class="at">d =</span> <span class="dv">2</span>) <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"f"</span>, <span class="at">digits =</span> d)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>pct <span class="ot">&lt;-</span> <span class="cf">function</span>(n, N, <span class="at">d =</span> <span class="dv">1</span>) <span class="fu">formatC</span>(<span class="dv">100</span> <span class="sc">*</span> n <span class="sc">/</span> N, <span class="at">format =</span> <span class="st">"f"</span>, <span class="at">digits =</span> d)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Frequency table with percentages</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>tab_freq <span class="ot">&lt;-</span> <span class="cf">function</span>(x, labels) {</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  f <span class="ot">&lt;-</span> <span class="fu">factor</span>(x, <span class="at">levels =</span> <span class="fu">seq_along</span>(labels), <span class="at">labels =</span> labels)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">table</span>(f, <span class="at">useNA =</span> <span class="st">"ifany"</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">Category =</span> <span class="fu">names</span>(n), <span class="at">n =</span> <span class="fu">as.vector</span>(n), <span class="at">Percent =</span> <span class="fu">pct</span>(<span class="fu">as.vector</span>(n), <span class="fu">length</span>(x)))</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="data" class="level1">
+<h1>1. Data</h1>
+<p>The file is the LimeSurvey export. Columns are selected by name, not by position. The checks below fail with an error if the export has a different structure.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>data_source <span class="ot">&lt;-</span> params<span class="sc">$</span>data</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">grepl</span>(<span class="st">"^https?://"</span>, data_source, <span class="at">ignore.case =</span> <span class="cn">TRUE</span>)) {</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># A github.com/.../blob/... link points to the web page, not the file:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># rewrite it to the raw-file address</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  data_source <span class="ot">&lt;-</span> <span class="fu">sub</span>(<span class="st">"^https?://github</span><span class="sc">\\</span><span class="st">.com/([^/]+)/([^/]+)/blob/"</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>                     <span class="st">"https://raw.githubusercontent.com/</span><span class="sc">\\</span><span class="st">1/</span><span class="sc">\\</span><span class="st">2/"</span>, data_source)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  data_file <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">".csv"</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  download_status <span class="ot">&lt;-</span> <span class="fu">download.file</span>(data_source, data_file, <span class="at">mode =</span> <span class="st">"wb"</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (download_status <span class="sc">!=</span> <span class="dv">0</span> <span class="sc">||</span> <span class="sc">!</span><span class="fu">file.exists</span>(data_file) <span class="sc">||</span> <span class="fu">file.size</span>(data_file) <span class="sc">==</span> <span class="dv">0</span>) {</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"Could not download the data file from "</span>, data_source)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>  data_file <span class="ot">&lt;-</span> data_source</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>data0 <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(data_file, <span class="at">header =</span> <span class="cn">TRUE</span>, <span class="at">check.names =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>                  <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span>, <span class="at">encoding =</span> <span class="st">"UTF-8"</span>)</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>expected <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"id"</span>, <span class="st">"submitdate"</span>, <span class="st">"lastpage"</span>, <span class="st">"startlanguage"</span>, <span class="st">"seed"</span>, <span class="st">"text"</span>,</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>              <span class="fu">paste0</span>(<span class="st">"experience[SQ00"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>, <span class="st">"]"</span>),</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>              <span class="fu">paste0</span>(<span class="st">"quiz[SQ00"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">9</span>, <span class="st">"]"</span>),</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>              <span class="fu">paste0</span>(<span class="st">"intention[SQ00"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, <span class="st">"]"</span>),</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>              <span class="st">"gender"</span>, <span class="st">"age"</span>, <span class="st">"educ"</span>, <span class="st">"comment"</span>)</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>missing_cols <span class="ot">&lt;-</span> <span class="fu">setdiff</span>(expected, <span class="fu">names</span>(data0))</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(missing_cols) <span class="sc">&gt;</span> <span class="dv">0</span>) <span class="fu">stop</span>(<span class="st">"Columns not found: "</span>, <span class="fu">paste</span>(missing_cols, <span class="at">collapse =</span> <span class="st">", "</span>))</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="fu">dim</span>(data0)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>## [1] 166  27</code></pre>
+</div>
+</div>
+<section id="sample" class="level2">
+<h2 class="anchored" data-anchor-id="sample">1.1 Sample</h2>
+<p>As in the original script, the first two rows are test cases and are removed. Only participants who reached the last page (<code>lastpage == 8</code>) are analysed.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>data_entered <span class="ot">&lt;-</span> data0[<span class="sc">-</span><span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), ]</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> data_entered <span class="sc">%&gt;%</span> <span class="fu">filter</span>(lastpage <span class="sc">==</span> <span class="dv">8</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>N <span class="ot">&lt;-</span> <span class="fu">nrow</span>(data)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">entered =</span> <span class="fu">nrow</span>(data_entered), <span class="at">completed =</span> N,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">completion_rate_pct =</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> N <span class="sc">/</span> <span class="fu">nrow</span>(data_entered)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>##             entered           completed completion_rate_pct 
+##                 164                 102                  62</code></pre>
+</div>
+</div>
+</section>
+<section id="variables" class="level2">
+<h2 class="anchored" data-anchor-id="variables">1.2 Variables</h2>
+<p>In the LimeSurvey export:</p>
+<ul>
+<li><code>experience[SQ001]</code> is familiarity and <code>experience[SQ002]</code> is past purchase. Codes: 1 = yes, 2 = no, 3 = I do not know.</li>
+<li><code>quiz[SQ001]</code> is the item without text. Its instruction told participants to choose “True”, and it is not analysed (see the note in the questionnaire).</li>
+<li><code>quiz[SQ002]</code> to <code>quiz[SQ009]</code> are quiz items 1–8. Codes: 1 = true, 2 = false.</li>
+<li><code>intention[SQ001]</code> to <code>intention[SQ006]</code> are the six intention items (1–7).</li>
+</ul>
+<p>Answer codes such as <code>A1</code> are turned into numbers with <code>readr::parse_number()</code>, as in the original script.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>to_num <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">as.numeric</span>(<span class="fu">parse_number</span>(<span class="fu">as.character</span>(x)))</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> data <span class="sc">%&gt;%</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    id,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">familiarity  =</span> <span class="fu">to_num</span>(<span class="st">`</span><span class="at">experience[SQ001]</span><span class="st">`</span>),</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">pastPurchase =</span> <span class="fu">to_num</span>(<span class="st">`</span><span class="at">experience[SQ002]</span><span class="st">`</span>),</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">emptyItem    =</span> <span class="fu">to_num</span>(<span class="st">`</span><span class="at">quiz[SQ001]</span><span class="st">`</span>),</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">across</span>(<span class="fu">all_of</span>(<span class="fu">paste0</span>(<span class="st">"quiz[SQ00"</span>, <span class="dv">2</span><span class="sc">:</span><span class="dv">9</span>, <span class="st">"]"</span>)), to_num),</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">across</span>(<span class="fu">all_of</span>(<span class="fu">paste0</span>(<span class="st">"intention[SQ00"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, <span class="st">"]"</span>)), to_num),</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">gender =</span> <span class="fu">to_num</span>(gender),</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">age    =</span> <span class="fu">to_num</span>(age),</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">educ   =</span> <span class="fu">to_num</span>(educ))</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(data) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"id"</span>, <span class="st">"familiarity"</span>, <span class="st">"pastPurchase"</span>, <span class="st">"emptyItem"</span>,</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">paste0</span>(<span class="st">"quiz"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>), <span class="fu">paste0</span>(<span class="st">"intention"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>), <span class="st">"gender"</span>, <span class="st">"age"</span>, <span class="st">"educ"</span>)</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Missing values among the analysed variables</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="fu">colSums</span>(<span class="fu">is.na</span>(<span class="fu">select</span>(data, <span class="sc">-</span>id)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>##  familiarity pastPurchase    emptyItem        quiz1        quiz2        quiz3 
+##            0            0            0            0            0            0 
+##        quiz4        quiz5        quiz6        quiz7        quiz8   intention1 
+##            0            0            0            0            0            0 
+##   intention2   intention3   intention4   intention5   intention6       gender 
+##            0            0            0            0            0            0 
+##          age         educ 
+##            0            0</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="participants" class="level1">
+<h1>2. Participants</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">M =</span> <span class="fu">mean</span>(data<span class="sc">$</span>age, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">SD =</span> <span class="fu">sd</span>(data<span class="sc">$</span>age, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">Min =</span> <span class="fu">min</span>(data<span class="sc">$</span>age, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">Max =</span> <span class="fu">max</span>(data<span class="sc">$</span>age, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>##        M       SD      Min      Max 
+## 25.97059 10.42793 18.00000 66.00000</code></pre>
+</div>
+</div>
+<p><strong>Gender</strong></p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">tab_freq</span>(data<span class="sc">$</span>gender, <span class="fu">c</span>(<span class="st">"Man"</span>, <span class="st">"Woman"</span>, <span class="st">"Non-binary or gender diverse"</span>,</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                              <span class="st">"Would rather not disclose"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Category</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: left;">Percent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Man</td>
+<td style="text-align: right;">29</td>
+<td style="text-align: left;">28.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Woman</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: left;">67.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Non-binary or gender diverse</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: left;">2.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Would rather not disclose</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: left;">2.0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><strong>Highest completed education</strong></p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">tab_freq</span>(data<span class="sc">$</span>educ, <span class="fu">c</span>(<span class="st">"Primary"</span>, <span class="st">"Secondary without high school diploma"</span>,</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>                            <span class="st">"Secondary with high school diploma"</span>, <span class="st">"University"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Category</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: left;">Percent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Primary</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: left;">3.9</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Secondary without high school diploma</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: left;">1.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Secondary with high school diploma</td>
+<td style="text-align: right;">63</td>
+<td style="text-align: left;">61.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">University</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: left;">33.3</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="familiarity-and-past-purchase" class="level1">
+<h1>3. Familiarity and past purchase</h1>
+<p><strong>“Have you ever seen Ecological Products with the green-leaf label in a store?”</strong></p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">tab_freq</span>(data<span class="sc">$</span>familiarity, <span class="fu">c</span>(<span class="st">"Yes"</span>, <span class="st">"No"</span>, <span class="st">"I do not know"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Category</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: left;">Percent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Yes</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: left;">72.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">No</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: left;">8.8</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">I do not know</td>
+<td style="text-align: right;">19</td>
+<td style="text-align: left;">18.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><strong>“Have you ever bought ecological products?”</strong></p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">tab_freq</span>(data<span class="sc">$</span>pastPurchase, <span class="fu">c</span>(<span class="st">"Yes"</span>, <span class="st">"No"</span>, <span class="st">"I do not know"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Category</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: left;">Percent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Yes</td>
+<td style="text-align: right;">71</td>
+<td style="text-align: left;">69.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">No</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">0.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">I do not know</td>
+<td style="text-align: right;">31</td>
+<td style="text-align: left;">30.4</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="knowledge-quiz" class="level1">
+<h1>4. Knowledge quiz</h1>
+<p>Items 1, 3, 4 and 5 are false statements, and items 2, 6, 7 and 8 are true statements. Each correct answer scores 1. This is the same scoring as the original script, which reverses items 1, 3, 4 and 5 (<code>3 - x</code>) and then computes <code>2 - x</code>.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>quiz_items <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"quiz"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>key <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>)   <span class="co"># correct answer: 1 = true, 2 = false</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>quiz_text <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">"1. The production of Ecological Products involves the heavy use of pesticides and artificial fertilizers to ensure high yields. (False)"</span>,</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">"2. Ecological Products must comply with specific technical standards and comprehensive quality control. (True)"</span>,</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">"3. Ecological Products are distinguished from conventional foods only by their price and packaging design. (False)"</span>,</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">"4. The use of the Ecological Product logo is not controlled by any specific regulation. (False)"</span>,</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>  <span class="st">"5. Ecological Products may compromise on safety to achieve environmental benefits. (False)"</span>,</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>  <span class="st">"6. The Ecological Product Logo is also intended to remind people of the importance of environmental protection and preventing pollution. (True)"</span>,</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>  <span class="st">"7. The Ecological Product logo aims to strengthen harmony between humans and the natural world. (True)"</span>,</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  <span class="st">"8. Ecological products are produced in an excellent ecological environment with minimal use of chemicals. (True)"</span>)</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>correct <span class="ot">&lt;-</span> <span class="fu">sweep</span>(<span class="fu">as.matrix</span>(data[quiz_items]), <span class="dv">2</span>, key, <span class="st">`</span><span class="at">==</span><span class="st">`</span>) <span class="sc">*</span> <span class="dv">1</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>data<span class="sc">$</span>quiz_score <span class="ot">&lt;-</span> <span class="fu">rowSums</span>(correct)</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Same result as the original scoring</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>quiz_orig <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(data[quiz_items])</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>quiz_orig[, <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">4</span>, <span class="dv">5</span>)] <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="sc">-</span> quiz_orig[, <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">4</span>, <span class="dv">5</span>)]</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">isTRUE</span>(<span class="fu">all.equal</span>(<span class="fu">unname</span>(<span class="fu">rowSums</span>(<span class="dv">2</span> <span class="sc">-</span> quiz_orig)), <span class="fu">unname</span>(data<span class="sc">$</span>quiz_score))))</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">M =</span> <span class="fu">mean</span>(data<span class="sc">$</span>quiz_score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">SD =</span> <span class="fu">sd</span>(data<span class="sc">$</span>quiz_score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>##         M        SD 
+## 7.5686275 0.6676366</code></pre>
+</div>
+</div>
+<p>Distribution of the number of correct answers (0–8):</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">as.data.frame</span>(<span class="fu">table</span>(<span class="st">`</span><span class="at">Correct answers</span><span class="st">`</span> <span class="ot">=</span> data<span class="sc">$</span>quiz_score), <span class="at">responseName =</span> <span class="st">"n"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Correct.answers</th>
+<th style="text-align: right;">n</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">5</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">6</td>
+<td style="text-align: right;">7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">7</td>
+<td style="text-align: right;">27</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">8</td>
+<td style="text-align: right;">67</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Accuracy for each item:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>n_correct <span class="ot">&lt;-</span> <span class="fu">colSums</span>(correct, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">Item =</span> quiz_text,</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>                 <span class="st">`</span><span class="at">Correct, n (%)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">paste0</span>(n_correct, <span class="st">" ("</span>, <span class="fu">pct</span>(n_correct, N), <span class="st">"%)"</span>),</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>                 <span class="at">check.names =</span> <span class="cn">FALSE</span>, <span class="at">row.names =</span> <span class="cn">NULL</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 90%">
+<col style="width: 9%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Item</th>
+<th style="text-align: left;">Correct, n (%)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">1. The production of Ecological Products involves the heavy use of pesticides and artificial fertilizers to ensure high yields. (False)</td>
+<td style="text-align: left;">100 (98.0%)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">2. Ecological Products must comply with specific technical standards and comprehensive quality control. (True)</td>
+<td style="text-align: left;">99 (97.1%)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">3. Ecological Products are distinguished from conventional foods only by their price and packaging design. (False)</td>
+<td style="text-align: left;">100 (98.0%)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">4. The use of the Ecological Product logo is not controlled by any specific regulation. (False)</td>
+<td style="text-align: left;">100 (98.0%)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">5. Ecological Products may compromise on safety to achieve environmental benefits. (False)</td>
+<td style="text-align: left;">93 (91.2%)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">6. The Ecological Product Logo is also intended to remind people of the importance of environmental protection and preventing pollution. (True)</td>
+<td style="text-align: left;">99 (97.1%)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">7. The Ecological Product logo aims to strengthen harmony between humans and the natural world. (True)</td>
+<td style="text-align: left;">83 (81.4%)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">8. Ecological products are produced in an excellent ecological environment with minimal use of chemicals. (True)</td>
+<td style="text-align: left;">98 (96.1%)</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Check of the item without text (participants were told to choose “True” = 1):</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(<span class="at">emptyItem =</span> data<span class="sc">$</span>emptyItem, <span class="at">useNA =</span> <span class="st">"ifany"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>## emptyItem
+##  1  2 
+## 76 26</code></pre>
+</div>
+</div>
+</section>
+<section id="purchase-intention" class="level1">
+<h1>5. Purchase intention</h1>
+<p>Item 3 (“I am unwilling to buy Ecological Products”) is reverse-coded (<code>8 - x</code>). Items 1–3 are the original measure (Tang et al., 2025, Study 1a); items 4–6 come from Kumar et al.&nbsp;(2023).</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>int_items <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"intention"</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>)</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>Intention <span class="ot">&lt;-</span> data[int_items]</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>Intention<span class="sc">$</span>intention3 <span class="ot">&lt;-</span> <span class="dv">8</span> <span class="sc">-</span> Intention<span class="sc">$</span>intention3</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>data<span class="sc">$</span>intention_3item <span class="ot">&lt;-</span> <span class="fu">rowMeans</span>(Intention[, <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>])</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>data<span class="sc">$</span>intention_6item <span class="ot">&lt;-</span> <span class="fu">rowMeans</span>(Intention)</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>int_text <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"1. I am willing to spend more on Ecological Products, as it is worth the extra charge."</span>,</span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>              <span class="st">"2. I plan to purchase food with the Ecological Products logo next time I shop."</span>,</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>              <span class="st">"3. I am unwilling to buy Ecological Products. (reverse-coded)"</span>,</span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>              <span class="st">"4. I intend to purchase Ecological products in the future."</span>,</span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>              <span class="st">"5. I am always interested in buying more Ecological Products for the family's needs."</span>,</span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>              <span class="st">"6. I always intend to look for Ecological Products, although outside the city."</span>)</span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">Item =</span> int_text,</span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>                 <span class="at">M  =</span> <span class="fu">fmt</span>(<span class="fu">sapply</span>(Intention, mean, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>                 <span class="at">SD =</span> <span class="fu">fmt</span>(<span class="fu">sapply</span>(Intention, sd, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>                 <span class="at">row.names =</span> <span class="cn">NULL</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 89%">
+<col style="width: 5%">
+<col style="width: 5%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Item</th>
+<th style="text-align: left;">M</th>
+<th style="text-align: left;">SD</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">1. I am willing to spend more on Ecological Products, as it is worth the extra charge.</td>
+<td style="text-align: left;">4.36</td>
+<td style="text-align: left;">1.40</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">2. I plan to purchase food with the Ecological Products logo next time I shop.</td>
+<td style="text-align: left;">3.88</td>
+<td style="text-align: left;">1.26</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">3. I am unwilling to buy Ecological Products. (reverse-coded)</td>
+<td style="text-align: left;">5.56</td>
+<td style="text-align: left;">1.64</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">4. I intend to purchase Ecological products in the future.</td>
+<td style="text-align: left;">5.22</td>
+<td style="text-align: left;">1.48</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">5. I am always interested in buying more Ecological Products for the family’s needs.</td>
+<td style="text-align: left;">3.89</td>
+<td style="text-align: left;">1.47</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">6. I always intend to look for Ecological Products, although outside the city.</td>
+<td style="text-align: left;">3.37</td>
+<td style="text-align: left;">1.51</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<section id="descriptive-statistics-and-floor-or-ceiling-effects" class="level2">
+<h2 class="anchored" data-anchor-id="descriptive-statistics-and-floor-or-ceiling-effects">5.1 Descriptive statistics and floor or ceiling effects</h2>
+<p>A floor or ceiling effect would show as many participants at the lowest (1) or highest (7) possible scale mean.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>scale_desc <span class="ot">&lt;-</span> <span class="cf">function</span>(x, label) <span class="fu">data.frame</span>(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">Scale =</span> label, <span class="at">M =</span> <span class="fu">fmt</span>(<span class="fu">mean</span>(x)), <span class="at">SD =</span> <span class="fu">fmt</span>(<span class="fu">sd</span>(x)), <span class="at">Min =</span> <span class="fu">fmt</span>(<span class="fu">min</span>(x)), <span class="at">Max =</span> <span class="fu">fmt</span>(<span class="fu">max</span>(x)),</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">% at floor (1)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">pct</span>(<span class="fu">sum</span>(x <span class="sc">==</span> <span class="dv">1</span>), <span class="fu">length</span>(x)),</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">% at ceiling (7)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">pct</span>(<span class="fu">sum</span>(x <span class="sc">==</span> <span class="dv">7</span>), <span class="fu">length</span>(x)),</span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">rbind</span>(<span class="fu">scale_desc</span>(data<span class="sc">$</span>intention_3item, <span class="st">"3 items (Tang et al., 2025, S1a)"</span>),</span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>            <span class="fu">scale_desc</span>(data<span class="sc">$</span>intention_6item, <span class="st">"6 items (extended)"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 38%">
+<col style="width: 5%">
+<col style="width: 5%">
+<col style="width: 5%">
+<col style="width: 5%">
+<col style="width: 17%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Scale</th>
+<th style="text-align: left;">M</th>
+<th style="text-align: left;">SD</th>
+<th style="text-align: left;">Min</th>
+<th style="text-align: left;">Max</th>
+<th style="text-align: left;">% at floor (1)</th>
+<th style="text-align: left;">% at ceiling (7)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">3 items (Tang et al., 2025, S1a)</td>
+<td style="text-align: left;">4.60</td>
+<td style="text-align: left;">1.14</td>
+<td style="text-align: left;">1.00</td>
+<td style="text-align: left;">6.67</td>
+<td style="text-align: left;">2.0</td>
+<td style="text-align: left;">0.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">6 items (extended)</td>
+<td style="text-align: left;">4.38</td>
+<td style="text-align: left;">1.06</td>
+<td style="text-align: left;">1.17</td>
+<td style="text-align: left;">6.33</td>
+<td style="text-align: left;">0.0</td>
+<td style="text-align: left;">0.0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="internal-consistency" class="level2">
+<h2 class="anchored" data-anchor-id="internal-consistency">5.2 Internal consistency</h2>
+<p>The original script uses <code>psych::omega()</code> with its defaults (three group factors, oblimin rotation). For the 3-item scale, this solution is underidentified, and <code>psych</code> gives a warning. The values below are the ones <code>psych::omega()</code> returns.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>om3 <span class="ot">&lt;-</span> psych<span class="sc">::</span><span class="fu">omega</span>(Intention[, <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>], <span class="at">plot =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>om6 <span class="ot">&lt;-</span> psych<span class="sc">::</span><span class="fu">omega</span>(Intention, <span class="at">plot =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">Scale =</span> <span class="fu">c</span>(<span class="st">"3 items (Tang et al., 2025, S1a)"</span>, <span class="st">"6 items (extended)"</span>),</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">alpha   =</span> <span class="fu">fmt</span>(<span class="fu">c</span>(om3<span class="sc">$</span>alpha, om6<span class="sc">$</span>alpha)),</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">omega_h =</span> <span class="fu">fmt</span>(<span class="fu">c</span>(om3<span class="sc">$</span>omega_h, om6<span class="sc">$</span>omega_h)),</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">omega_t =</span> <span class="fu">fmt</span>(<span class="fu">c</span>(om3<span class="sc">$</span>omega.tot, om6<span class="sc">$</span>omega.tot))),</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"Scale"</span>, <span class="st">"Cronbach's alpha"</span>, <span class="st">"Omega hierarchical"</span>, <span class="st">"Omega total"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 40%">
+<col style="width: 20%">
+<col style="width: 23%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Scale</th>
+<th style="text-align: left;">Cronbach’s alpha</th>
+<th style="text-align: left;">Omega hierarchical</th>
+<th style="text-align: left;">Omega total</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">3 items (Tang et al., 2025, S1a)</td>
+<td style="text-align: left;">0.71</td>
+<td style="text-align: left;">0.06</td>
+<td style="text-align: left;">0.72</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">6 items (extended)</td>
+<td style="text-align: left;">0.82</td>
+<td style="text-align: left;">0.69</td>
+<td style="text-align: left;">0.88</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</section>
+<section id="comparison-with-the-report" class="level1">
+<h1>6. Comparison with the report</h1>
+<p>The report gives:</p>
+<ul>
+<li>N = 163 entered and N = 104 completed (63%).</li>
+<li>Age M = 25.90, SD = 10.34; 62% with a high school diploma, 33% with a university degree; 68% women.</li>
+<li>71% had seen Ecological Products, 9% had not and 20% did not know.</li>
+<li>68% had bought them and 32% did not know.</li>
+<li>Quiz: M = 7.57 correct answers, SD = 0.67.</li>
+<li>3-item scale: M = 4.61, SD = 1.13, α = 0.63, ω<sub>t</sub> = 0.68.</li>
+<li>6-item scale: M = 4.41, SD = 1.07, α = 0.80, ω<sub>h</sub> = 0.85.</li>
+</ul>
+<p>Two points to check against the output above:</p>
+<ol type="1">
+<li><strong>Quiz score.</strong> The comments in the original script give <em>M</em> = 7.5, <em>SD</em> = 0.82. The report gives <em>M</em> = 7.57, <em>SD</em> = 0.67. Only one pair can match the data.</li>
+<li><strong>Omega for the 6-item scale.</strong> The report gives ω<sub>h</sub> = 0.85, which is higher than α = 0.80. Hierarchical omega is usually lower than α. The value may be ω<sub>t</sub> (omega total), so the label “ω<sub>h</sub>” may need to be corrected.</li>
+</ol>
+</section>
+<section id="session-information" class="level1">
+<h1>Session information</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>## R version 4.5.1 (2025-06-13)
+## Platform: x86_64-pc-linux-gnu
+## Running under: Ubuntu 24.04.5 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.0 
+## LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.12.0  LAPACK version 3.12.0
+## 
+## locale:
+##  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=cs_CZ.UTF-8        LC_COLLATE=en_US.UTF-8    
+##  [5] LC_MONETARY=cs_CZ.UTF-8    LC_MESSAGES=en_US.UTF-8   
+##  [7] LC_PAPER=cs_CZ.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=cs_CZ.UTF-8 LC_IDENTIFICATION=C       
+## 
+## time zone: Europe/Prague
+## tzcode source: system (glibc)
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+## [1] psych_2.4.1 knitr_1.45  readr_2.1.5 dplyr_1.1.4
+## 
+## loaded via a namespace (and not attached):
+##  [1] vctrs_0.6.5          nlme_3.1-168         cli_3.6.5           
+##  [4] rlang_1.1.6          xfun_0.41            GPArotation_2024.2-1
+##  [7] generics_0.1.4       jsonlite_1.8.8       glue_1.8.0          
+## [10] htmltools_0.5.7      hms_1.1.3            rmarkdown_2.25      
+## [13] grid_4.5.1           evaluate_0.23        tibble_3.3.0        
+## [16] tzdb_0.5.0           fastmap_1.1.1        yaml_2.3.12         
+## [19] lifecycle_1.0.4      compiler_4.5.1       htmlwidgets_1.6.4   
+## [22] pkgconfig_2.0.3      lattice_0.22-5       digest_0.6.37       
+## [25] R6_2.6.1             tidyselect_1.2.1     pillar_1.10.2       
+## [28] mnormt_2.1.1         parallel_4.5.1       magrittr_2.0.4      
+## [31] withr_3.0.2          tools_4.5.1</code></pre>
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
